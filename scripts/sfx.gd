@@ -30,6 +30,12 @@ func _ready() -> void:
 	streams["overheat"] = _make(0.6, _overheat)
 	streams["reload"] = _make(0.5, _reload)
 	streams["thruster"] = _make(1.0, _thruster, true)
+	streams["rifle"] = _make(0.9, _rifle)
+	streams["shotgun"] = _make(0.9, _shotgun)
+	streams["minigun"] = _make(0.12, _minigun)
+	streams["launcher"] = _make(0.5, _launcher)
+	streams["lever"] = _make(0.35, _lever)
+	streams["spin_loop"] = _make(0.5, _spin, true)
 
 
 func play3d(name: String, pos: Vector3, vol_db: float = 0.0, pitch: float = 1.0) -> void:
@@ -219,3 +225,41 @@ func _reload(t: float, _d: float, _st: Dictionary) -> float:
 
 func _thruster(_t: float, _d: float, st: Dictionary) -> float:
 	return _lp(st, "lp", _noise(), 0.15) * 1.4 + _lp(st, "lp2", _noise(), 0.02) * 1.2
+
+
+
+func _rifle(t: float, _d: float, st: Dictionary) -> float:
+	var crack := _noise() * exp(-t * 70.0) * 1.4
+	var boom := _lp(st, "lp", _noise(), 0.12) * exp(-t * 7.0) * 2.4
+	var tail := _lp(st, "lp2", _noise(), 0.03) * exp(-t * 3.0) * 1.5
+	return crack + boom + tail + sin(TAU * 60.0 * t) * exp(-t * 18.0) * 0.6
+
+
+func _shotgun(t: float, _d: float, st: Dictionary) -> float:
+	var crack := _noise() * exp(-t * 45.0) * 1.3
+	var boom := _lp(st, "lp", _noise(), 0.09) * exp(-t * 5.0) * 3.0
+	return crack + boom + sin(TAU * 48.0 * t) * exp(-t * 12.0) * 0.9
+
+
+func _minigun(t: float, _d: float, st: Dictionary) -> float:
+	return (_noise() * exp(-t * 60.0) + _lp(st, "lp", _noise(), 0.2) * exp(-t * 25.0) * 1.5) * 0.9
+
+
+func _launcher(t: float, _d: float, st: Dictionary) -> float:
+	var thunk := sin(TAU * (90.0 - t * 60.0) * t) * exp(-t * 14.0) * 1.2
+	return thunk + _lp(st, "lp", _noise(), 0.15) * exp(-t * 10.0) * 1.2
+
+
+func _lever(t: float, _d: float, _st: Dictionary) -> float:
+	var s := 0.0
+	for k in [0.0, 0.17]:
+		if t > k:
+			var tt: float = t - k
+			s += (sin(TAU * 2600.0 * tt) * 0.4 + _noise() * 0.7) * exp(-tt * 70.0)
+	return s
+
+
+func _spin(t: float, _d: float, st: Dictionary) -> float:
+	var whine := _osc(st, "ph", 440.0) * 0.25 + _osc(st, "ph2", 880.0) * 0.1
+	var rattle: float = sign(sin(TAU * 60.0 * t)) * 0.08
+	return whine + rattle + _lp(st, "lp", _noise(), 0.3) * 0.25

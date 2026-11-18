@@ -192,7 +192,7 @@ func _build_game_ui() -> void:
 	ab.add_theme_constant_override("separation", 14)
 	hb.add_child(ab)
 	var pv := VBoxContainer.new()
-	pv.add_child(_label("[F / ПКМ] СУПЕРУДАР", 14, Color(0.7, 0.85, 1.0)))
+	pv.add_child(_label("[F] СУПЕРУДАР", 14, Color(0.7, 0.85, 1.0)))
 	punch_bar = _bar(CYAN, 150, 6)
 	pv.add_child(punch_bar)
 	ab.add_child(pv)
@@ -217,7 +217,7 @@ func _build_game_ui() -> void:
 	wb.add_child(ammo_label)
 	ammo_bar = _bar(CYAN, 380, 8)
 	wb.add_child(ammo_bar)
-	var keys := _label("1 БЛАСТЕР   2 ЛАЗЕР   3 РАКЕТЫ", 14, Color(1, 1, 1, 0.55))
+	var keys := _label("1-7 ОРУЖИЕ   R ПЕРЕЗАРЯДКА   ПКМ ПРИЦЕЛ", 14, Color(1, 1, 1, 0.55))
 	keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	wb.add_child(keys)
 
@@ -306,7 +306,7 @@ void fragment() {
 	mv.add_child(sp2)
 	best_label = _label("", 20, Color(1, 1, 1, 0.6))
 	mv.add_child(best_label)
-	mv.add_child(_label("WASD — движение   SHIFT — бег   ПРОБЕЛ — прыжок (двойной)\nЛКМ — огонь   1/2/3, колесо — оружие\nF или ПКМ (держать) — суперудар   Q в воздухе — удар о землю\nESC — пауза", 17, Color(1, 1, 1, 0.55)))
+	mv.add_child(_label("WASD — движение   SHIFT — бег   ПРОБЕЛ — прыжок (двойной)\nЛКМ — огонь   ПКМ — прицел   R — перезарядка   1-7, колесо — оружие\nF (держать) — суперудар   Q в воздухе — удар о землю   ESC — пауза\nСтреляй в латунные суставы, глаза и роторы — они ломаются с одного попадания", 17, Color(1, 1, 1, 0.55)))
 
 	# ---------- пауза
 	pause_menu = Control.new()
@@ -552,24 +552,33 @@ func _process(delta: float) -> void:
 	punch_bar.value = 1.0 - clamp(p.punch_cd / 1.6, 0.0, 1.0)
 	slam_bar.value = 1.0 - clamp(p.slam_cd / 3.0, 0.0, 1.0)
 
-	weapon_label.text = Player.WEAPON_NAMES[p.weapon]
+	var w: Dictionary = p.wdef()
+	weapon_label.text = w.name
 	var fill := ammo_bar.get_theme_stylebox("fill") as StyleBoxFlat
-	match p.weapon:
-		0:
+	match w.type:
+		"blaster":
 			ammo_label.text = "ПЕРЕГРЕВ!" if p.overheated else "∞"
 			ammo_bar.value = p.heat
 			fill.bg_color = CYAN.lerp(Color(1, 0.2, 0.05), p.heat)
 			weapon_label.add_theme_color_override("font_color", CYAN)
-		1:
+		"laser":
 			ammo_label.text = "%d%%" % int(p.energy * 100.0)
 			ammo_bar.value = p.energy
 			fill.bg_color = Color(1.0, 0.35, 0.2)
 			weapon_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.3))
-		2:
-			ammo_label.text = "%d / %d" % [p.rockets, p.max_rockets]
-			ammo_bar.value = float(p.rockets) / p.max_rockets
-			fill.bg_color = ACCENT
+		_:
+			var a: int = p.ammo[p.weapon]
+			var r: int = p.reserve[p.weapon]
+			if p.reload_t > 0.0:
+				ammo_label.text = "ПЕРЕЗАРЯДКА"
+				ammo_bar.value = 1.0 - p.reload_t / w.reload
+			else:
+				ammo_label.text = "%d / %d" % [a, r]
+				ammo_bar.value = float(a) / w.mag
+			fill.bg_color = ACCENT if a > 0 or p.reload_t > 0.0 else Color(1, 0.15, 0.1)
 			weapon_label.add_theme_color_override("font_color", ACCENT)
+	if w.id == "minigun" and p.spin > 0.02 and p.spin < 1.0 and p.reload_t <= 0.0:
+		ammo_label.text = "РАСКРУТКА %d%%" % int(p.spin * 100.0)
 
 	score_label.text = str(G.score)
 	combo_label.text = "КОМБО x%.1f" % G.combo if G.combo > 1.01 else ""
@@ -581,6 +590,9 @@ func _draw_crosshair() -> void:
 	var gap := 6.0
 	if p and is_instance_valid(p):
 		gap += Vector2(p.velocity.x, p.velocity.z).length() * 0.6 + p.heat * 6.0
+		gap *= 1.0 - p.aim_t * 0.6
+		if p.wdef().id == "shotgun":
+			gap += 14.0 * (1.0 - p.aim_t * 0.5)
 		if p.punch_charge >= 0.0:
 			var r: float = 22.0 + 10.0 * (1.0 - p.punch_charge)
 			crosshair.draw_arc(Vector2.ZERO, r, -PI * 0.5, -PI * 0.5 + TAU * p.punch_charge, 48, CYAN, 3.0, true)

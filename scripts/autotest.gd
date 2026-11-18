@@ -37,6 +37,15 @@ func _nearest_robot() -> Robot:
 	return best
 
 
+## Целимся по очереди в слабые точки, потом в корпус.
+func _target_point(r: Robot) -> Vector3:
+	for n in r.parts:
+		var pp: Dictionary = r.parts[n]
+		if pp.alive and (pp.weak or pp.type in ["thigh", "rotor", "gun", "pod"]) and int(t * 2.0) % 3 != 0:
+			return pp.node.global_position
+	return r.body.global_position
+
+
 func _aim_at(pos: Vector3) -> void:
 	var p: Player = G.player
 	var d := pos - p.cam.global_position
@@ -55,23 +64,22 @@ func _physics_process(delta: float) -> void:
 	max_robots = max(max_robots, robots)
 
 	var r := _nearest_robot()
-	if r and is_instance_valid(r) and r.parts.torso.alive:
-		_aim_at(r.parts.torso.node.global_position + Vector3(0, 0.3, 0))
+	if r and is_instance_valid(r) and r.parts.body.alive:
+		_aim_at(_target_point(r))
 	p.bot_fire = false
 	p.bot_punch = false
 	p.bot_move = Vector2.ZERO
 
-	if t > 3.0 and t < 9.0:
-		p._select(0)
-		p.bot_fire = true
-	elif t > 9.0 and t < 14.0:
-		p._select(1)
-		p.bot_fire = true
-	elif t > 14.0 and t < 19.0:
-		p._select(2)
-		p.bot_fire = true
+	if t > 3.0 and t < 17.0:
+		# каждые 2 секунды — следующее оружие, через одно — с прицелом
+		var wi := int((t - 3.0) / 2.0) % 7
+		p.select(wi)
+		p.bot_aim = wi % 2 == 0
+		p.bot_fire = fmod(t, 0.2) < 0.1 or Player.WEAPONS[wi].auto
+		if p.ammo[wi] == 0 and Player.WEAPONS[wi].has("mag"):
+			p.reserve[wi] = 50
 	elif t > 19.0 and t < 20.0:
-		p._select(0)
+		p.select(0)
 		if r:
 			# подходим к роботу и заряжаем суперудар
 			p.global_position = r.global_position + (p.global_position - r.global_position).normalized() * 5.0
@@ -96,8 +104,10 @@ func _physics_process(delta: float) -> void:
 			G.main._start_wave()
 			G.main._start_wave()
 	elif t > 26.0 and t < 32.0:
-		p._select(2)
-		p.rockets = 10
+		p.select(6)
+		p.ammo[6] = 1
+		p.reserve[6] = 10
+		p.bot_fire = fmod(t, 0.4) < 0.2
 		p.bot_fire = true
 	elif t > 32.0 and t < 32.1:
 		if _once("killall"):

@@ -256,7 +256,7 @@ func _process(delta: float) -> void:
 			_start_wave()
 	if to_spawn.size() > 0:
 		spawn_timer -= delta
-		if spawn_timer <= 0.0 and alive < 14:
+		if spawn_timer <= 0.0 and alive < 10:
 			spawn_timer = 0.7
 			_spawn(to_spawn.pop_front())
 	hud.set_wave(max(wave, 1), alive + to_spawn.size())
@@ -264,20 +264,23 @@ func _process(delta: float) -> void:
 
 func _start_wave() -> void:
 	wave += 1
-	var n := 3 + wave * 2
 	var list: Array = []
-	var brutes := 0 if wave < 3 else int(wave / 2)
-	var scouts := int(n * 0.35)
-	for i in brutes:
-		list.append(Robot.Kind.BRUTE)
-	for i in scouts:
-		list.append(Robot.Kind.SCOUT)
-	while list.size() < n + brutes:
-		list.append(Robot.Kind.SOLDIER)
+	var hornets := 2 + wave
+	var crabs := 1 + int(wave / 2)
+	var leapers := 0 if wave < 2 else 1 + int((wave - 2) / 3)
+	var rocketeers := 0 if wave < 3 else 1 + int((wave - 3) / 2)
+	for i in hornets:
+		list.append(Robot.Kind.HORNET)
+	for i in crabs:
+		list.append(Robot.Kind.CRAB)
+	for i in leapers:
+		list.append(Robot.Kind.LEAPER)
+	for i in rocketeers:
+		list.append(Robot.Kind.ROCKETEER)
 	list.shuffle()
 	to_spawn = list
 	spawn_timer = 0.5
-	player.rockets = min(player.rockets + 4, player.max_rockets)
+	player.add_ammo(0.5)
 	hud.announce_text("ВОЛНА %d" % wave, Color(1.0, 0.55, 0.1), 1.6)
 	Sfx.play2d("alarm", -6.0)
 
@@ -287,13 +290,14 @@ func _spawn(k: int) -> void:
 	pts.shuffle()
 	var pos: Vector3 = pts[0]
 	for p in pts:
-		if p.distance_to(player.global_position) > 16.0:
+		if p.distance_to(player.global_position) > 18.0:
 			pos = p
 			break
 	pos += Vector3(randf_range(-2, 2), 0, randf_range(-2, 2))
 	var r := Robot.create(k)
 	add_child(r)
-	r.global_position = pos + Vector3(0, 26.0, 0)
+	var flyer: bool = Robot.KINDS[k].flyer
+	r.global_position = pos + Vector3(0, 18.0 if flyer else 26.0, 0)
 	r.rotation.y = randf() * TAU
 	alive += 1
 

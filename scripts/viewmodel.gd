@@ -45,6 +45,22 @@ var laser_mat: ShaderMaterial
 var rocket_tip: Node3D
 var punch_state := 0.0           # 0 нет, 0..1 заряд, 2 удар
 var _t := 0.0
+var wcfg: Array = []             # настройки позы для каждого оружия
+var levers: Array = []
+var lever_t: Array = []
+var drum: Node3D
+var drum_angle := 0.0
+var drum_target := 0.0
+var barrels: Node3D
+var reload_total := 0.0
+var reload_left := 0.0
+
+const GLB := {
+	"rifle": {"scale": 0.8, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3(0.08, 0.04, -0.3), "ads": Vector3(0.0, -0.052, -0.36)},
+	"shotgun": {"scale": 0.8, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3(0.08, 0.02, -0.26), "ads": Vector3(0.0, -0.062, -0.36)},
+	"minigun": {"scale": 0.85, "pos": Vector3(0.0, 0.0, 0.0), "lh": Vector3(0.06, 0.05, -0.12), "ads": Vector3(0.1, -0.2, -0.5)},
+	"launcher": {"scale": 0.85, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3(0.08, -0.02, -0.22), "ads": Vector3(0.0, -0.13, -0.4)},
+}
 
 
 static func mat(c: Color, metal: float = 0.5, rough: float = 0.5, emis: Color = Color.BLACK, energy: float = 0.0) -> ShaderMaterial:
@@ -95,7 +111,7 @@ func _cyl(parent: Node3D, r: float, h: float, pos: Vector3, m: Material, rot: Ve
 func _ready() -> void:
 	root = Node3D.new()
 	add_child(root)
-	var sleeve := mat(Color(0.12, 0.13, 0.15), 0.1, 0.8)
+	var sleeve := mat(Color(0.2, 0.21, 0.19), 0.05, 0.85)
 	var glove := mat(Color(0.08, 0.08, 0.09), 0.2, 0.6)
 	var armor := mat(Color(0.22, 0.23, 0.25), 0.7, 0.35)
 	var orange := mat(Color(0.85, 0.45, 0.06), 0.5, 0.4)
@@ -105,17 +121,17 @@ func _ready() -> void:
 	# правая рука (держит оружие)
 	right_hand = Node3D.new()
 	root.add_child(right_hand)
-	_box(right_hand, Vector3(0.1, 0.1, 0.34), Vector3(0.05, -0.12, 0.17), sleeve, Vector3(0.45, 0, 0))
-	_box(right_hand, Vector3(0.11, 0.035, 0.16), Vector3(0.05, -0.065, 0.15), armor, Vector3(0.45, 0, 0))
-	_box(right_hand, Vector3(0.112, 0.012, 0.03), Vector3(0.05, -0.05, 0.08), orange, Vector3(0.45, 0, 0))
-	_box(right_hand, Vector3(0.09, 0.1, 0.1), Vector3(0.03, -0.06, 0.0), glove)
+	_box(right_hand, Vector3(0.075, 0.075, 0.3), Vector3(0.06, -0.16, 0.12), sleeve, Vector3(0.95, 0.15, 0))
+	_box(right_hand, Vector3(0.08, 0.03, 0.14), Vector3(0.06, -0.12, 0.1), armor, Vector3(0.95, 0.15, 0))
+	_box(right_hand, Vector3(0.082, 0.012, 0.025), Vector3(0.06, -0.1, 0.05), orange, Vector3(0.95, 0.15, 0))
+	_box(right_hand, Vector3(0.075, 0.09, 0.09), Vector3(0.03, -0.07, 0.0), glove)
 
 	# левая рука (поддерживает)
 	left_hand = Node3D.new()
 	root.add_child(left_hand)
-	_box(left_hand, Vector3(0.09, 0.09, 0.32), Vector3(-0.15, -0.13, -0.05), sleeve, Vector3(0.45, -0.7, 0))
-	_box(left_hand, Vector3(0.1, 0.03, 0.14), Vector3(-0.14, -0.085, -0.05), armor, Vector3(0.45, -0.7, 0))
-	_box(left_hand, Vector3(0.09, 0.08, 0.11), Vector3(-0.06, -0.06, -0.2), glove)
+	_box(left_hand, Vector3(0.07, 0.07, 0.3), Vector3(-0.12, -0.17, -0.12), sleeve, Vector3(1.0, -0.6, 0))
+	_box(left_hand, Vector3(0.075, 0.025, 0.12), Vector3(-0.11, -0.13, -0.12), armor, Vector3(1.0, -0.6, 0))
+	_box(left_hand, Vector3(0.075, 0.07, 0.1), Vector3(-0.06, -0.06, -0.2), glove)
 
 	# ---------- бластер
 	var w0 := Node3D.new()
@@ -179,9 +195,35 @@ func _ready() -> void:
 	rocket_tip.position = Vector3(0, 0.06, -0.6)
 	_add_muzzle(w2, Vector3(0, 0.06, -0.62))
 
-	weapons = [w0, w1, w2]
+	# модели из Blender
+	var glb_nodes := {}
+	for id in ["rifle", "shotgun", "minigun", "launcher"]:
+		var wrap := Node3D.new()
+		root.add_child(wrap)
+		var inst: Node3D = load("res://models/weapons/%s.glb" % id).instantiate()
+		wrap.add_child(inst)
+		Mats.apply(inst, true)
+		var c: Dictionary = GLB[id]
+		wrap.scale = Vector3.ONE * c.scale
+		wrap.position = c.pos
+		glb_nodes[id] = wrap
+	var m_old := muzzles.duplicate()   # [бластер, лазер, рпг]
+	weapons = [glb_nodes.rifle, glb_nodes.shotgun, glb_nodes.minigun, w0, w1, glb_nodes.launcher, w2]
+	muzzles = []
 	for i in weapons.size():
-		weapons[i].visible = i == 0
+		var w: Node3D = weapons[i]
+		var mz: Node3D = w.find_child("muzzle", true, false)
+		if mz == null:
+			mz = m_old[[0, 0, 0, 0, 1, 0, 2][i]]
+		muzzles.append(mz)
+		var lv: Node3D = w.find_child("lever", true, false)
+		levers.append(lv)
+		lever_t.append(1.0)
+		var id: String = ["rifle", "shotgun", "minigun", "blaster", "laser", "launcher", "rpg"][i]
+		wcfg.append(GLB.get(id, {"lh": Vector3.ZERO, "ads": Vector3(0.0, -0.05, -0.42)}))
+		w.visible = i == 0
+	drum = glb_nodes.launcher.find_child("drum", true, false)
+	barrels = glb_nodes.minigun.find_child("barrels", true, false)
 	root.position = Vector3(0.2, -0.17, -0.5)
 	root.scale = Vector3.ONE * 0.72
 
@@ -212,6 +254,17 @@ func switch_to(i: int) -> void:
 	target = i
 	switch_t = 0.32
 	Sfx.play2d("reload", -10.0, 1.4)
+
+
+func on_shot() -> void:
+	lever_t[current] = 0.0
+	if current == 5:
+		drum_target += PI * 0.5
+
+
+func start_reload(t: float) -> void:
+	reload_total = t
+	reload_left = t
 
 
 func is_switching() -> bool:
@@ -282,6 +335,34 @@ func _process(delta: float) -> void:
 		if fist.position.y < -0.55:
 			fist.visible = false
 
+	# прицеливание: оружие к центру, прицел на линию взгляда
+	var aim: float = player.aim_t
+	if aim > 0.0:
+		var ads: Vector3 = wcfg[current].ads + Vector3(0, 0, kick * 0.04)
+		pos = pos.lerp(ads, aim)
+		rot = rot.lerp(Vector3(kick_rot * 0.05, 0, 0), aim)
+	# перезарядка: наклон и опускание
+	if reload_left > 0.0:
+		reload_left -= delta
+		var k: float = 1.0 - max(reload_left, 0.0) / max(reload_total, 0.01)
+		var d := sin(k * PI)
+		pos.y -= 0.1 * d
+		pos.x -= 0.04 * d
+		rot += Vector3(0.35 * d, 0.2 * d, 0.55 * d)
+		if current == 5:
+			drum_target += delta * 8.0
+	left_hand.position = left_hand.position.lerp(wcfg[current].lh, clamp(delta * 12.0, 0.0, 1.0))
+	# рычаг после выстрела
+	for i in levers.size():
+		if levers[i] and lever_t[i] < 1.0:
+			lever_t[i] = min(lever_t[i] + delta * 2.4, 1.0)
+			levers[i].rotation.x = sin(lever_t[i] * PI) * 0.9
+	if drum:
+		drum_angle = lerp(drum_angle, drum_target, clamp(delta * 14.0, 0.0, 1.0))
+		drum.rotation.z = drum_angle
+	if barrels:
+		barrels.rotate_object_local(Vector3.BACK, player.spin * delta * 45.0)
+
 	root.position = root.position.lerp(pos, clamp(delta * 18.0, 0.0, 1.0))
 	root.rotation = root.rotation.lerp(rot, clamp(delta * 14.0, 0.0, 1.0))
 
@@ -292,4 +373,4 @@ func _process(delta: float) -> void:
 		m.set_shader_parameter("emission", hc)
 		m.set_shader_parameter("emission_energy", 2.0 + heat * 6.0 + (4.0 if player.overheated and fmod(_t, 0.2) < 0.1 else 0.0))
 	laser_mat.set_shader_parameter("emission_energy", 3.0 + (10.0 if player.laser_on else 0.0) * (0.8 + 0.2 * sin(_t * 60.0)))
-	rocket_tip.visible = player.rockets > 0 and player.fire_cd <= 0.0
+	rocket_tip.visible = player.ammo[6] > 0 and player.fire_cd <= 0.0

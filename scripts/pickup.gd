@@ -1,6 +1,6 @@
 class_name Pickup
 extends Area3D
-## Подбираемый предмет: аптечка (0) или ракеты (1).
+## Подбираемый предмет: аптечка (0) или патроны (1).
 
 var type := 0
 var t := 0.0
@@ -77,8 +77,8 @@ func _on_body(b: Node) -> void:
 		if G.hud:
 			G.hud.popup("+40 ЗДОРОВЬЯ", 0)
 	else:
-		G.player.rockets = min(G.player.rockets + 3, G.player.max_rockets)
+		G.player.add_ammo(0.6)
 		if G.hud:
-			G.hud.popup("+3 РАКЕТЫ", 0)
+			G.hud.popup("+ПАТРОНЫ", 0)
 	Sfx.play2d("pickup", -2.0)
 	queue_free()

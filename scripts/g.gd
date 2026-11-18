@@ -52,8 +52,9 @@ func _setup_input() -> void:
 		"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 		"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"jump": [KEY_SPACE], "sprint": [KEY_SHIFT], "punch": [KEY_F, KEY_E],
-		"slam": [KEY_Q, KEY_CTRL, KEY_C], "weapon_1": [KEY_1], "weapon_2": [KEY_2],
-		"weapon_3": [KEY_3], "pause": [KEY_ESCAPE, KEY_P],
+		"slam": [KEY_Q, KEY_CTRL, KEY_C], "reload": [KEY_R], "pause": [KEY_ESCAPE, KEY_P],
+		"weapon_1": [KEY_1], "weapon_2": [KEY_2], "weapon_3": [KEY_3], "weapon_4": [KEY_4],
+		"weapon_5": [KEY_5], "weapon_6": [KEY_6], "weapon_7": [KEY_7],
 	}
 	for a in keys:
 		if not InputMap.has_action(a):
@@ -62,7 +63,7 @@ func _setup_input() -> void:
 			var e := InputEventKey.new()
 			e.physical_keycode = k
 			InputMap.action_add_event(a, e)
-	var mb := {"fire": MOUSE_BUTTON_LEFT, "punch": MOUSE_BUTTON_RIGHT}
+	var mb := {"fire": MOUSE_BUTTON_LEFT, "aim": MOUSE_BUTTON_RIGHT}
 	for a in mb:
 		if not InputMap.has_action(a):
 			InputMap.add_action(a, 0.2)

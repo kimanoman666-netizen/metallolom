@@ -1,73 +1,89 @@
 class_name Robot
 extends CharacterBody3D
-## Робот, собранный из отдельных частей. Каждую часть можно отстрелить:
-## она становится физическим обломком, а робот теряет соответствующую способность.
+## Робот ARC из модели Blender. Каждая часть — отдельный узел с хитбоксом.
+## Слабые точки (колени, глаз, роторы ракетчика) ломаются с одного попадания.
+## Шагающие роботы ставят ноги через IK; летающие держатся на роторах и падают без них.
 
-enum Kind { SCOUT, SOLDIER, BRUTE }
+enum Kind { LEAPER, CRAB, HORNET, ROCKETEER }
 
 const KINDS := {
-	Kind.SCOUT: {
-		"name": "Скаут", "s": 0.82, "bulk": 0.85, "hp": 0.55, "speed": 7.0, "range": 13.0,
-		"fire_cd": 0.16, "burst": 4, "burst_cd": 1.5, "dmg": 4.0, "melee_dmg": 10.0,
-		"main": Color(0.78, 0.8, 0.82), "accent": Color(0.05, 0.7, 0.75), "dark": Color(0.12, 0.13, 0.15),
-		"eye": Color(0.2, 1.0, 1.0), "score": 100, "gun": true,
+	Kind.LEAPER: {
+		"name": "Прыгун", "model": "res://models/leaper.glb", "flyer": false,
+		"body_hp": 950.0, "hp": {"thigh": 260.0, "shin": 210.0, "calf": 180.0},
+		"weak": ["knee", "eye"], "crit": {}, "bone2": "shin",
+		"speed": 5.2, "score": 700, "radius": 1.05, "step": 1.5, "step_time": 0.3, "step_h": 0.8,
 	},
-	Kind.SOLDIER: {
-		"name": "Солдат", "s": 1.0, "bulk": 1.0, "hp": 1.0, "speed": 4.4, "range": 19.0,
-		"fire_cd": 0.11, "burst": 6, "burst_cd": 2.1, "dmg": 5.0, "melee_dmg": 14.0,
-		"main": Color(0.33, 0.34, 0.36), "accent": Color(0.95, 0.58, 0.06), "dark": Color(0.1, 0.1, 0.11),
-		"eye": Color(1.0, 0.18, 0.05), "score": 200, "gun": true,
+	Kind.CRAB: {
+		"name": "Краб", "model": "res://models/crab.glb", "flyer": false,
+		"body_hp": 650.0, "hp": {"thigh": 170.0, "calf": 150.0},
+		"weak": ["knee"], "crit": {"eye": 3.0}, "bone2": "knee",
+		"speed": 3.4, "score": 400, "radius": 1.25, "step": 0.75, "step_time": 0.2, "step_h": 0.35,
 	},
-	Kind.BRUTE: {
-		"name": "Громила", "s": 1.45, "bulk": 1.35, "hp": 2.7, "speed": 3.5, "range": 2.9,
-		"fire_cd": 0.0, "burst": 0, "burst_cd": 0.0, "dmg": 0.0, "melee_dmg": 30.0,
-		"main": Color(0.42, 0.11, 0.08), "accent": Color(0.85, 0.75, 0.1), "dark": Color(0.08, 0.08, 0.08),
-		"eye": Color(1.0, 0.5, 0.0), "score": 450, "gun": false,
+	Kind.HORNET: {
+		"name": "Шершень", "model": "res://models/hornet.glb", "flyer": true,
+		"body_hp": 180.0, "hp": {"rotor": 80.0, "gun": 70.0},
+		"weak": ["eye"], "crit": {}, "speed": 8.0, "score": 200, "radius": 0.75,
+		"alt": 5.0, "dist": 13.0, "crash_at": 1,
+	},
+	Kind.ROCKETEER: {
+		"name": "Ракетчик", "model": "res://models/rocketeer.glb", "flyer": true,
+		"body_hp": 420.0, "hp": {"pod": 110.0},
+		"weak": ["rotor"], "crit": {}, "speed": 4.5, "score": 500, "radius": 1.1,
+		"alt": 8.5, "dist": 21.0, "crash_at": 2,
 	},
 }
 
-const PART_NAMES := {
-	"head": "ГОЛОВА СНЕСЕНА", "arm_l": "РУКА ОТОРВАНА", "arm_r": "РУКА ОТОРВАНА",
-	"fore_l": "КИСТЬ ОТСТРЕЛЕНА", "fore_r": "ОРУЖИЕ ОТСТРЕЛЕНО", "thigh_l": "НОГА ОТОРВАНА",
-	"thigh_r": "НОГА ОТОРВАНА", "shin_l": "ГОЛЕНЬ ОТБИТА", "shin_r": "ГОЛЕНЬ ОТБИТА",
+const BREAK_TEXT := {
+	"knee": "КОЛЕНО ВЫБИТО", "eye": "ГЛАЗ РАЗБИТ", "rotor": "РОТОР СБИТ", "gun": "ПУШКА СБИТА",
+	"pod": "РАКЕТНИЦА СБИТА", "thigh": "НОГА ОТОРВАНА", "shin": "НОГА ПЕРЕБИТА", "calf": "ГОЛЕНЬ ОТБИТА",
 }
 
-var kind: int = Kind.SOLDIER
+static var _models := {}
+
+var kind: int = Kind.HORNET
 var cfg: Dictionary
-var s := 1.0
-var bulk := 1.0
-
-var rig: Node3D
-var parts := {}            # имя -> словарь части
+var flyer := false
+var model: Node3D
+var body: MeshInstance3D
+var parts := {}              # имя узла -> данные части
+var mats := {}               # имя материала -> материал этого робота
 var shape: CollisionShape3D
-var capsule: CapsuleShape3D
-var muzzle: Marker3D
-var eye_mat: StandardMaterial3D
-var core_light: OmniLight3D
-var thruster: Node3D
+var legs: Array = []
+var rotors: Array = []       # [{node, blades, name}]
+var muzzles: Array = []
 
-var state := "drop"        # drop, active, dead
+var state := "drop"
 var dead := false
-var crippled := false
 var blind := false
-var has_gun := true
-var self_destruct := -1.0
-
+var t_state := 0.0
 var knock := Vector3.ZERO
+var fx_cd := 0.0
+var snd_cd := 0.0
+var step_snd_cd := 0.0
+var flash := 0.0
+
+# шагающие
+var ride := 2.0
+var ride_cur := 2.0
+var crouch := 0.0
+var tilt := Vector2.ZERO
 var walk_phase := 0.0
-var strafe_dir := 1.0
-var strafe_timer := 0.0
-var fire_timer := 1.5
-var burst_left := 0
-var attack_cd := 1.0
-var windup := -1.0
-var recoil := 0.0
-var land_timer := 0.0
-var fx_cooldown := 0.0
-var sound_cooldown := 0.0
-var step_timer := 0.0
-var think_offset := 0.0
-var _lean := 0.0
+var jump_cd := 3.0
+var melee_cd := 1.0
+var mortar_cd := 3.0
+var charge_dir := Vector3.ZERO
+var strafe := 1.0
+var strafe_t := 0.0
+var air_t := 0.0
+
+# летающие
+var orbit := 0.0
+var fire_cd := 2.0
+var burst := 0
+var lock_t := -1.0
+var lock_beam: MeshInstance3D
+var spin := 0.0
+var wobble := 0.0
 
 
 static func create(k: int) -> Robot:
@@ -76,625 +92,862 @@ static func create(k: int) -> Robot:
 	return r
 
 
+static func _scene(path: String) -> PackedScene:
+	if not _models.has(path):
+		_models[path] = load(path)
+	return _models[path]
+
+
 func _ready() -> void:
 	cfg = KINDS[kind]
-	s = cfg.s
-	bulk = cfg.bulk
-	has_gun = cfg.gun
+	flyer = cfg.flyer
 	collision_layer = G.L_ROBOT
 	collision_mask = G.L_WORLD | G.L_PLAYER | G.L_ROBOT | G.L_PROPS
 	floor_max_angle = deg_to_rad(50)
-	floor_snap_length = 0.4
-	safe_margin = 0.02
-	strafe_dir = 1.0 if randf() < 0.5 else -1.0
-	fire_timer = randf_range(1.0, 2.5)
-	think_offset = randf() * 10.0
-	_build()
-	velocity = Vector3(0, -22, 0)
+	floor_snap_length = 0.5
+	safe_margin = 0.03
+	if flyer:
+		motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+	strafe = 1.0 if randf() < 0.5 else -1.0
+	orbit = randf() * TAU
+	jump_cd = randf_range(2.5, 5.0)
+	fire_cd = randf_range(1.5, 3.0)
+	mortar_cd = randf_range(2.0, 4.0)
 
+	model = _scene(cfg.model).instantiate()
+	add_child(model)
+	body = model.get_node("body")
+	_scan(body)
+	_setup_materials()
 
-# =================================================================== сборка
-
-func _mats() -> Dictionary:
-	var d := {}
-	for key in ["main", "accent", "dark"]:
-		var m := StandardMaterial3D.new()
-		m.albedo_color = cfg[key]
-		m.metallic = 0.75 if key != "dark" else 0.6
-		m.roughness = 0.38 if key == "main" else 0.5
-		m.emission_enabled = true
-		m.emission = Color(1, 1, 1)
-		m.emission_energy_multiplier = 0.0
-		d[key] = m
-	return d
-
-
-func _v(x: float, y: float, z: float) -> Vector3:
-	return Vector3(x * s * bulk, y * s, z * s * bulk)
-
-
-func _add_part(pname: String, parent: Node3D, pivot: Vector3, hp: float, children_of: String = "") -> Dictionary:
-	var node := Node3D.new()
-	node.name = pname
-	parent.add_child(node)
-	node.position = pivot
-	var p := {
-		"name": pname, "node": node, "hp": hp * cfg.hp, "max": hp * cfg.hp, "alive": true,
-		"areas": [], "mats": _mats(), "parent": children_of, "kids": [], "redirect": "",
-	}
-	parts[pname] = p
-	if children_of != "":
-		parts[children_of].kids.append(pname)
-	return p
-
-
-func _mesh(p: Dictionary, kind_mesh: String, size: Vector3, pos: Vector3, mat_key: String) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	match kind_mesh:
-		"box":
-			var b := BoxMesh.new()
-			b.size = size
-			mi.mesh = b
-		"cyl":
-			var c := CylinderMesh.new()
-			c.top_radius = size.x
-			c.bottom_radius = size.x
-			c.height = size.y
-			c.radial_segments = 12
-			mi.mesh = c
-		"sph":
-			var sp := SphereMesh.new()
-			sp.radius = size.x
-			sp.height = size.x * 2.0
-			sp.radial_segments = 16
-			sp.rings = 8
-			mi.mesh = sp
-	if mat_key == "eye":
-		mi.material_override = eye_mat
+	shape = CollisionShape3D.new()
+	if flyer:
+		var sp := SphereShape3D.new()
+		sp.radius = cfg.radius
+		shape.shape = sp
+		for n in parts:
+			if parts[n].type == "rotor":
+				rotors.append({"node": parts[n].node, "blades": parts[n].node.find_child("blades_*", false, false), "name": n})
+		for m in ["muzzle", "muzzle_l", "muzzle_r"]:
+			var mz := model.find_child(m, true, false)
+			if mz:
+				muzzles.append(mz)
 	else:
-		mi.material_override = p.mats[mat_key]
-	p.node.add_child(mi)
-	mi.position = pos
-	return mi
+		ride = body.position.y
+		ride_cur = ride
+		var cap := CapsuleShape3D.new()
+		cap.radius = cfg.radius
+		cap.height = ride + 0.9
+		shape.shape = cap
+		shape.position.y = cap.height * 0.5
+		_setup_legs()
+	add_child(shape)
+
+	lock_beam = MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.025, 0.025, 1.0)
+	lock_beam.mesh = bm
+	lock_beam.material_override = Fx.glow_mat(Color(1.0, 0.1, 0.05), 6.0)
+	lock_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	lock_beam.top_level = true
+	lock_beam.visible = false
+	add_child(lock_beam)
+
+	velocity = Vector3(0, -18, 0) if not flyer else Vector3(0, -8, 0)
 
 
-func _hitbox(p: Dictionary, size: Vector3, pos: Vector3, mult: float = 1.0, target: String = "") -> void:
+# ================================================================== сборка
+
+func _scan(n: Node) -> void:
+	if n is MeshInstance3D:
+		var t := String(n.name).get_slice("_", 0)
+		if t == "body" or cfg.hp.has(t) or t in cfg.weak or cfg.crit.has(t):
+			_register(n, t)
+	for c in n.get_children():
+		_scan(c)
+
+
+func _register(n: MeshInstance3D, t: String) -> void:
+	var weak: bool = t in cfg.weak
+	var hp: float = cfg.body_hp if t == "body" else (1.0 if weak else float(cfg.hp.get(t, 100.0)))
+	var p := {
+		"name": String(n.name), "type": t, "node": n, "hp": hp, "max": hp, "weak": weak,
+		"crit": float(cfg.crit.get(t, 0.0)), "alive": true, "areas": [],
+	}
+	parts[p.name] = p
+	n.set_meta("pid", p.name)
+	var aabb := n.get_aabb()
+	var k := 1.35 if weak else (0.8 if t == "body" else 0.95)
 	var a := Hitbox.new()
 	a.robot = self
-	a.part = target if target != "" else p.name
-	a.mult = mult
+	a.part = p.name
+	a.mult = 1.0
 	a.collision_layer = G.L_HITBOX
 	a.collision_mask = 0
 	a.monitoring = false
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = size
+	bs.size = (aabb.size * k).max(Vector3(0.22, 0.22, 0.22))
 	cs.shape = bs
 	a.add_child(cs)
-	p.node.add_child(a)
-	a.position = pos
+	n.add_child(a)
+	a.position = aabb.get_center()
 	p.areas.append(a)
 
 
-func _build() -> void:
-	eye_mat = StandardMaterial3D.new()
-	eye_mat.albedo_color = cfg.eye
-	eye_mat.emission_enabled = true
-	eye_mat.emission = cfg.eye
-	eye_mat.emission_energy_multiplier = 6.0
-
-	rig = Node3D.new()
-	rig.name = "Rig"
-	add_child(rig)
-
-	var big := kind == Kind.BRUTE
-
-	# --- таз
-	var hips := _add_part("hips", rig, Vector3(0, 1.0 * s, 0), 1.0)
-	hips.redirect = "torso"
-	_mesh(hips, "box", _v(0.5, 0.22, 0.32), Vector3.ZERO, "dark")
-	_hitbox(hips, _v(0.52, 0.26, 0.36), Vector3.ZERO, 1.0, "torso")
-
-	# --- торс
-	var torso := _add_part("torso", hips.node, Vector3(0, 0.1 * s, 0), 220.0, "hips")
-	_mesh(torso, "box", _v(0.72, 0.62, 0.44), _v(0, 0.42, 0), "main")
-	_mesh(torso, "box", _v(0.5, 0.24, 0.36), _v(0, 0.08, 0), "dark")
-	_mesh(torso, "box", _v(0.75, 0.08, 0.47), _v(0, 0.64, 0), "accent")
-	_mesh(torso, "box", _v(0.5, 0.46, 0.22), _v(0, 0.45, 0.3), "dark")
-	_mesh(torso, "box", _v(0.12, 0.3, 0.06), _v(-0.2, 0.32, 0.43), "accent")
-	_mesh(torso, "box", _v(0.12, 0.3, 0.06), _v(0.2, 0.32, 0.43), "accent")
-	_mesh(torso, "sph", Vector3(0.11 * s, 0, 0), _v(0, 0.42, -0.21), "eye")
-	_hitbox(torso, _v(0.76, 0.82, 0.5), _v(0, 0.35, 0.02))
-	_hitbox(torso, _v(0.24, 0.24, 0.12), _v(0, 0.42, -0.25), 2.5)
-	core_light = OmniLight3D.new()
-	core_light.light_color = cfg.eye
-	core_light.light_energy = 0.35
-	core_light.omni_range = 1.6 * s
-	core_light.shadow_enabled = false
-	torso.node.add_child(core_light)
-	core_light.position = _v(0, 0.42, -0.7)
-
-	# --- голова
-	var head := _add_part("head", torso.node, _v(0, 0.75, 0), 60.0, "torso")
-	_mesh(head, "cyl", Vector3(0.07 * s * bulk, 0.14 * s, 0), Vector3.ZERO, "dark")
-	if big:
-		_mesh(head, "box", _v(0.42, 0.26, 0.4), _v(0, 0.12, -0.04), "main")
-		_mesh(head, "box", _v(0.34, 0.06, 0.04), _v(0, 0.14, -0.25), "eye")
-	else:
-		_mesh(head, "box", _v(0.38, 0.3, 0.38), _v(0, 0.15, 0), "main")
-		_mesh(head, "box", _v(0.3, 0.08, 0.04), _v(0, 0.17, -0.19), "eye")
-		_mesh(head, "cyl", Vector3(0.015 * s, 0.3 * s, 0), _v(0.12, 0.42, 0.05), "dark")
-		_mesh(head, "box", _v(0.4, 0.05, 0.3), _v(0, 0.31, 0.02), "accent")
-	_hitbox(head, _v(0.42, 0.36, 0.44), _v(0, 0.15, -0.02), 1.6)
-
-	# --- руки
-	for side in [-1.0, 1.0]:
-		var sfx := "_l" if side < 0 else "_r"
-		var arm := _add_part("arm" + sfx, torso.node, _v(0.48 * side, 0.6, 0), 70.0, "torso")
-		_mesh(arm, "box", _v(0.28, 0.22, 0.32), _v(0, 0.03, 0), "accent")
-		_mesh(arm, "box", _v(0.17, 0.42, 0.17), _v(0, -0.22, 0), "main")
-		_hitbox(arm, _v(0.26, 0.52, 0.26), _v(0, -0.18, 0))
-		var fore := _add_part("fore" + sfx, arm.node, _v(0, -0.44, 0), 55.0, "arm" + sfx)
-		_mesh(fore, "box", _v(0.16, 0.38, 0.16), _v(0, -0.19, 0), "dark")
-		if big:
-			_mesh(fore, "box", _v(0.3, 0.28, 0.3), _v(0, -0.46, 0), "main")
-			_mesh(fore, "box", _v(0.32, 0.06, 0.32), _v(0, -0.36, 0), "accent")
-			_hitbox(fore, _v(0.32, 0.62, 0.32), _v(0, -0.3, 0))
-		elif side > 0 and has_gun:
-			_mesh(fore, "box", _v(0.14, 0.34, 0.2), _v(0, -0.34, -0.09), "dark")
-			_mesh(fore, "cyl", Vector3(0.04 * s, 0.3 * s, 0), _v(0, -0.56, -0.09), "dark")
-			_mesh(fore, "cyl", Vector3(0.05 * s, 0.04 * s, 0), _v(0, -0.68, -0.09), "eye")
-			_mesh(fore, "box", _v(0.04, 0.2, 0.06), _v(0, -0.3, -0.21), "accent")
-			muzzle = Marker3D.new()
-			fore.node.add_child(muzzle)
-			muzzle.position = _v(0, -0.76, -0.09)
-			_hitbox(fore, _v(0.22, 0.75, 0.3), _v(0, -0.36, -0.05))
-		else:
-			_mesh(fore, "box", _v(0.14, 0.12, 0.12), _v(0, -0.42, 0), "main")
-			_hitbox(fore, _v(0.2, 0.52, 0.2), _v(0, -0.24, 0))
-
-	# --- ноги
-	for side in [-1.0, 1.0]:
-		var sfx := "_l" if side < 0 else "_r"
-		var thigh := _add_part("thigh" + sfx, hips.node, _v(0.17 * side, -0.06, 0), 80.0, "hips")
-		_mesh(thigh, "box", _v(0.2, 0.46, 0.24), _v(0, -0.23, 0), "main")
-		_mesh(thigh, "box", _v(0.17, 0.13, 0.2), _v(0, -0.47, -0.05), "accent")
-		_hitbox(thigh, _v(0.27, 0.54, 0.3), _v(0, -0.24, 0))
-		var shin := _add_part("shin" + sfx, thigh.node, _v(0, -0.48, 0), 65.0, "thigh" + sfx)
-		_mesh(shin, "box", _v(0.17, 0.42, 0.2), _v(0, -0.21, 0), "dark")
-		_mesh(shin, "box", _v(0.23, 0.08, 0.38), _v(0, -0.44, -0.06), "main")
-		_mesh(shin, "box", _v(0.06, 0.25, 0.04), _v(0, -0.2, -0.12), "accent")
-		_hitbox(shin, _v(0.25, 0.5, 0.4), _v(0, -0.24, -0.03))
-
-	# --- коллайдер тела
-	capsule = CapsuleShape3D.new()
-	capsule.radius = 0.38 * s * bulk
-	capsule.height = 2.15 * s
-	shape = CollisionShape3D.new()
-	shape.shape = capsule
-	add_child(shape)
-	shape.position = Vector3(0, 1.075 * s, 0)
-
-	# --- реактивный ранец для высадки
-	thruster = Node3D.new()
-	torso.node.add_child(thruster)
-	thruster.position = _v(0, 0.2, 0.42)
-	var flame := MeshInstance3D.new()
-	var fm := CylinderMesh.new()
-	fm.top_radius = 0.12 * s
-	fm.bottom_radius = 0.02
-	fm.height = 1.4 * s
-	flame.mesh = fm
-	flame.material_override = Fx.glow_mat(Color(0.4, 0.7, 1.0), 6.0)
-	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	thruster.add_child(flame)
-	flame.position = Vector3(0, -0.8 * s, 0)
-	var tl := OmniLight3D.new()
-	tl.light_color = Color(0.4, 0.7, 1.0)
-	tl.light_energy = 4.0
-	tl.omni_range = 6.0
-	thruster.add_child(tl)
-	tl.position = Vector3(0, -1.0, 0)
-
-	_pose_idle()
+func _setup_materials() -> void:
+	var stack: Array = [model]
+	while stack.size() > 0:
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if n is MeshInstance3D and n.mesh:
+			for s in n.mesh.get_surface_count():
+				var src: Material = n.mesh.surface_get_material(s)
+				var nm := src.resource_name if src else "metal_dark"
+				if not mats.has(nm):
+					mats[nm] = Mats.robot(nm).duplicate()
+				n.set_surface_override_material(s, mats[nm])
 
 
-func _pose_idle() -> void:
-	if has_gun and parts.arm_r.alive:
-		parts.arm_r.node.rotation.x = PI * 0.5
+func _setup_legs() -> void:
+	for i in 8:
+		var th := body.get_node_or_null("thigh_%d" % i) as Node3D
+		if th == null:
+			break
+		var b2 := th.get_node_or_null("%s_%d" % [cfg.bone2, i]) as Node3D
+		var end := th.find_child("end_%d" % i, true, false) as Node3D
+		if b2 == null or end == null:
+			continue
+		var rest := to_local(end.global_position)
+		rest.y = 0.0
+		var leg := {
+			"i": i, "thigh": th, "b2": b2, "end": end,
+			"a": b2.position.length(), "b": b2.global_position.distance_to(end.global_position),
+			"rest": rest, "foot": end.global_position, "from": Vector3.ZERO, "to": Vector3.ZERO,
+			"t": -1.0, "group": i % 2, "ok": true, "swing": randf() * TAU,
+			"chain": _chain_names(th), "thigh_name": String(th.name),
+		}
+		legs.append(leg)
 
 
-# =================================================================== ИИ
+func _chain_names(th: Node) -> Array:
+	var out: Array = []
+	var stack: Array = [th]
+	while stack.size() > 0:
+		var n: Node = stack.pop_back()
+		if n.has_meta("pid"):
+			out.append(n.get_meta("pid"))
+		for c in n.get_children():
+			stack.append(c)
+	return out
+
+
+# ================================================================== кадр
 
 func _physics_process(delta: float) -> void:
 	if dead:
 		return
+	fx_cd -= delta
+	snd_cd -= delta
+	step_snd_cd -= delta
+	t_state -= delta
 	if global_position.y < -25.0:
 		die(Vector3.UP, 0.0, true)
 		return
-	fx_cooldown -= delta
-	sound_cooldown -= delta
-	if state == "drop":
-		velocity.y = max(velocity.y - 30.0 * delta, -28.0)
-		velocity.x = 0
-		velocity.z = 0
-		move_and_slide()
-		if is_on_floor():
-			_land()
-		return
-	if land_timer > 0.0:
-		land_timer -= delta
-		velocity.x = move_toward(velocity.x, 0, 20 * delta)
-		velocity.z = move_toward(velocity.z, 0, 20 * delta)
-		velocity.y -= 22.0 * delta
+	if state == "show":
+		velocity = Vector3(0, 0 if flyer else velocity.y - 24.0 * delta, 0)
 		move_and_slide()
 		return
+	if flyer:
+		_fly(delta)
+	else:
+		_walk_ai(delta)
 
+
+func _process(delta: float) -> void:
+	if dead:
+		return
+	if flash > 0.0:
+		flash = max(flash - delta * 2.5, 0.0)
+		for nm in ["metal_dark", "metal_mid", "metal_light"]:
+			if mats.has(nm):
+				mats[nm].emission_energy_multiplier = flash
+	if flyer:
+		_animate_flyer(delta)
+	else:
+		_animate_walker(delta)
+
+
+func _player() -> Node:
 	var p = G.player
 	if p == null or not is_instance_valid(p) or p.dead:
-		velocity.x = move_toward(velocity.x, 0, 10 * delta)
-		velocity.z = move_toward(velocity.z, 0, 10 * delta)
-		velocity.y -= 22.0 * delta
+		return null
+	return p
+
+
+# ================================================================== шагающие
+
+func supports() -> int:
+	var n := 0
+	for l in legs:
+		if l.ok:
+			n += 1
+	return n
+
+
+func _walk_ai(delta: float) -> void:
+	var p := _player()
+	var sup := supports()
+	var on_floor := is_on_floor()
+	var g := 24.0
+
+	if state == "drop":
+		velocity.y = max(velocity.y - 30.0 * delta, -30.0)
+		velocity.x = 0.0
+		velocity.z = 0.0
 		move_and_slide()
+		if is_on_floor():
+			_land(0.6)
 		return
 
-	if self_destruct > 0.0:
-		self_destruct -= delta
-		eye_mat.emission_energy_multiplier = 12.0 if fmod(self_destruct, 0.2) < 0.1 else 0.5
-		if self_destruct <= 0.0:
-			die(Vector3.UP, 300.0)
-			return
-
-	var to: Vector3 = p.global_position - global_position
-	var flat := Vector3(to.x, 0, to.z)
-	var dist := flat.length()
-	var dir: Vector3 = flat / max(dist, 0.001)
-	var speed: float = cfg.speed
-	if crippled:
-		speed *= 0.32
-	var melee: bool = not has_gun
-	if melee and kind != Kind.BRUTE:
-		speed *= 1.25   # без оружия — бешеный рывок
+	if state == "air":
+		air_t += delta
+		velocity.y -= g * delta
+		move_and_slide()
+		if is_on_floor() and air_t > 0.25:
+			_land(1.0)
+			state = "move"
+			jump_cd = randf_range(4.5, 7.5)
+		return
 
 	var desired := Vector3.ZERO
-	strafe_timer -= delta
-	if strafe_timer <= 0.0:
-		strafe_timer = randf_range(1.2, 3.2)
-		strafe_dir = -strafe_dir if randf() < 0.6 else strafe_dir
+	var sfac: Array = [0.0, 0.12, 0.3, 0.7, 1.0]
+	var spd: float = cfg.speed * sfac[min(sup, 4)]
+	var dist := 999.0
+	var dir := -global_basis.z
+	if p:
+		var to: Vector3 = p.global_position - global_position
+		to.y = 0
+		dist = to.length()
+		if dist > 0.01:
+			dir = to / dist
 
-	if melee:
-		var rng: float = cfg.range if kind == Kind.BRUTE else 2.2
-		if windup < 0.0:
-			if dist > rng * 0.8:
-				desired = dir
-			if dist < rng and attack_cd <= 0.0:
-				windup = 0.6 if kind == Kind.BRUTE else 0.35
-				Sfx.play3d("servo", global_position, 0.0, 0.7 if kind == Kind.BRUTE else 1.2)
-		else:
-			windup -= delta
-			if windup <= 0.0:
-				windup = -1.0
-				_melee_hit(p, dist, dir)
-	else:
-		var rng: float = cfg.range
-		var side := Vector3(-dir.z, 0, dir.x) * strafe_dir
-		if dist > rng:
-			desired = (dir + side * 0.3).normalized()
-		elif dist < rng * 0.45:
-			desired = (-dir + side * 0.5).normalized()
-		else:
-			desired = side
-		_gun_logic(delta, p, dist)
+	strafe_t -= delta
+	if strafe_t <= 0.0:
+		strafe_t = randf_range(1.5, 3.5)
+		if randf() < 0.5:
+			strafe = -strafe
+	var side := Vector3(-dir.z, 0, dir.x) * strafe
 
-	attack_cd -= delta
+	match state:
+		"move":
+			if p:
+				if blind:
+					desired = (dir.rotated(Vector3.UP, sin(Time.get_ticks_msec() * 0.0007) * 1.6)).normalized()
+				elif kind == Kind.LEAPER:
+					desired = dir if dist > 7.0 else side
+				else:
+					desired = dir if dist > 5.0 else side * 0.5
+				jump_cd -= delta
+				melee_cd -= delta
+				mortar_cd -= delta
+				var los := _los(p)
+				if kind == Kind.LEAPER:
+					if sup >= 3 and jump_cd <= 0.0 and dist > 6.0 and dist < 26.0 and los and not blind:
+						state = "crouch"
+						t_state = 0.55
+						Sfx.play3d("servo", global_position, 4.0, 0.5)
+					elif dist < 4.8 and melee_cd <= 0.0:
+						state = "stomp"
+						t_state = 0.5
+						Sfx.play3d("servo", global_position, 2.0, 0.7)
+				else:
+					if sup >= 3 and dist < 13.0 and dist > 4.0 and melee_cd <= 0.0 and los and not blind:
+						state = "wind"
+						t_state = 0.6
+						Sfx.play3d("servo", global_position, 2.0, 0.6)
+					elif dist < 3.2 and melee_cd <= 0.0:
+						state = "stomp"
+						t_state = 0.4
+					elif dist > 7.0 and mortar_cd <= 0.0 and sup >= 2:
+						_fire_mortar(p)
+						mortar_cd = randf_range(3.5, 5.5)
+		"crouch":
+			crouch = move_toward(crouch, 1.0, delta * 4.0)
+			if t_state <= 0.0 and p:
+				_leap(p)
+				return
+		"stomp":
+			crouch = move_toward(crouch, -0.6, delta * 5.0)
+			if t_state <= 0.0:
+				_stomp(p, dist)
+				state = "move"
+				melee_cd = 2.0
+		"wind":
+			crouch = move_toward(crouch, 0.5, delta * 4.0)
+			if t_state <= 0.0:
+				state = "charge"
+				t_state = 1.3
+				charge_dir = dir
+				Sfx.play3d("whoosh", global_position, 4.0, 0.5)
+		"charge":
+			crouch = move_toward(crouch, 0.0, delta * 4.0)
+			desired = charge_dir
+			spd = 11.0 * sfac[min(sup, 4)]
+			if p and dist < 2.6:
+				p.take_damage(28.0, global_position)
+				p.knockback(charge_dir * 16.0 + Vector3.UP * 6.0)
+				Sfx.play3d("impact", global_position, 2.0, 0.7)
+				p.add_shake(0.6)
+				state = "move"
+				melee_cd = 3.5
+			elif is_on_wall() or t_state <= 0.0:
+				if is_on_wall():
+					Sfx.play3d("clang", global_position, 4.0, 0.5)
+					Fx.dust(global_position + charge_dir * 1.5, 1.0)
+				state = "move"
+				melee_cd = 3.0
+
+	if state == "move":
+		crouch = move_toward(crouch, 0.0, delta * 3.0)
 
 	# обход препятствий
-	if desired.length() > 0.1:
-		var eye := global_position + Vector3(0, 0.7 * s, 0)
-		var hit := G.ray(eye, eye + desired * 1.6 * s, G.L_WORLD | G.L_PROPS, [get_rid()], false)
+	if desired.length() > 0.1 and state != "charge":
+		var eye := global_position + Vector3(0, 0.8, 0)
+		var hit := G.ray(eye, eye + desired * (cfg.radius + 1.6), G.L_WORLD | G.L_PROPS, [get_rid()], false)
 		if not hit.is_empty():
-			desired = desired.rotated(Vector3.UP, 1.1 * strafe_dir)
-			if is_on_wall():
-				strafe_dir = -strafe_dir
+			desired = desired.rotated(Vector3.UP, 1.2 * strafe)
 
-	var target_v := desired * speed
-	var accel := 9.0 if is_on_floor() else 2.0
-	velocity.x = lerp(velocity.x, target_v.x, clamp(accel * delta, 0.0, 1.0))
-	velocity.z = lerp(velocity.z, target_v.z, clamp(accel * delta, 0.0, 1.0))
-	velocity.y -= 22.0 * delta
+	var tv := desired * spd
+	var acc := 7.0 if on_floor else 1.0
+	velocity.x = lerp(velocity.x, tv.x, clamp(acc * delta, 0.0, 1.0))
+	velocity.z = lerp(velocity.z, tv.z, clamp(acc * delta, 0.0, 1.0))
+	velocity.y -= g * delta
 	velocity += knock
 	knock = Vector3.ZERO
 	move_and_slide()
 
-	# поворот к игроку
-	var yaw := atan2(-dir.x, -dir.z)
-	rotation.y = lerp_angle(rotation.y, yaw, clamp(6.0 * delta, 0.0, 1.0))
-
-	# шаги
-	var hs := Vector2(velocity.x, velocity.z).length()
-	if is_on_floor() and hs > 0.6:
-		step_timer -= delta * hs * (0.5 if kind == Kind.BRUTE else 0.8)
-		if step_timer <= 0.0:
-			step_timer = 1.0
-			Sfx.play3d("step", global_position, -6.0 + 6.0 * (s - 1.0), randf_range(0.7, 0.9) / s)
+	if p and sup > 0:
+		var yaw := atan2(-dir.x, -dir.z)
+		if state == "charge":
+			yaw = atan2(-charge_dir.x, -charge_dir.z)
+		rotation.y = lerp_angle(rotation.y, yaw, clamp(2.5 * delta, 0.0, 1.0))
 
 
-func _gun_logic(delta: float, p: Node, dist: float) -> void:
-	fire_timer -= delta
-	if fire_timer > 0.0 or muzzle == null:
+func _los(p: Node) -> bool:
+	var from := global_position + Vector3(0, ride_cur, 0)
+	return G.ray(from, p.global_position + Vector3(0, 1.2, 0), G.L_WORLD, [], false).is_empty()
+
+
+func _leap(p: Node) -> void:
+	var target: Vector3 = p.global_position + p.velocity * 0.4
+	var d := target - global_position
+	var flat := Vector2(d.x, d.z).length()
+	var tt: float = clamp(flat / 16.0, 0.75, 1.3)
+	var g := 24.0
+	velocity = Vector3(d.x / tt, (d.y + 0.5 * g * tt * tt) / tt, d.z / tt)
+	state = "air"
+	air_t = 0.0
+	crouch = -0.4
+	Sfx.play3d("whoosh", global_position, 6.0, 0.45)
+	Fx.dust(global_position, 1.5)
+
+
+func _land(power: float) -> void:
+	if state == "drop":
+		state = "move"
+	crouch = 0.6 * power
+	Fx.dust(global_position, 1.6 * power + 0.4)
+	Sfx.play3d("impact" if power > 0.8 else "step", global_position, 4.0, 0.5)
+	for l in legs:
+		l.foot = _foot_target(l)
+		l.t = -1.0
+	var p := _player()
+	if p:
+		var dist: float = p.global_position.distance_to(global_position)
+		p.add_shake(clamp(0.8 - dist / 30.0, 0.0, 0.8) * power)
+		if power > 0.8 and dist < 5.0:
+			p.take_damage(32.0 * (1.0 - dist / 6.0), global_position)
+			p.knockback((p.global_position - global_position).normalized() * 12.0 + Vector3.UP * 7.0)
+	_push_debris(global_position, 5.0 * power, 6.0)
+
+
+func _stomp(p: Node, dist: float) -> void:
+	var pos := global_position + (-global_basis.z) * 2.0
+	Fx.dust(pos, 1.2)
+	Sfx.play3d("impact", pos, 2.0, 0.65)
+	_push_debris(pos, 3.5, 5.0)
+	if p and dist < (5.2 if kind == Kind.LEAPER else 3.6):
+		p.take_damage(26.0, global_position)
+		p.knockback((p.global_position - global_position).normalized() * 14.0 + Vector3.UP * 6.0)
+
+
+func _push_debris(pos: Vector3, radius: float, k: float) -> void:
+	var q := PhysicsShapeQueryParameters3D.new()
+	var sp := SphereShape3D.new()
+	sp.radius = radius
+	q.shape = sp
+	q.transform = Transform3D(Basis(), pos)
+	q.collision_mask = G.L_DEBRIS | G.L_PROPS
+	for r in get_world_3d().direct_space_state.intersect_shape(q, 64):
+		var c = r.collider
+		if c is RigidBody3D and not c.freeze:
+			c.apply_central_impulse(((c.global_position - pos).normalized() + Vector3.UP) * c.mass * k * 0.5)
+
+
+func _fire_mortar(p: Node) -> void:
+	var from := body.global_position + Vector3(0, 1.4, 0)
+	var target: Vector3 = p.global_position + p.velocity * 0.6
+	var tt := 1.6
+	var g := 20.0
+	var d := target - from
+	var v := Vector3(d.x / tt, (d.y + 0.5 * g * tt * tt) / tt, d.z / tt)
+	Projectile.mortar(from, v, target)
+	Sfx.play3d("rocket", from, 0.0, 0.6)
+	Fx.smoke(from, 6, 0.6, 1.2, Color(0.5, 0.5, 0.5))
+	crouch = 0.3
+
+
+func _foot_target(l: Dictionary) -> Vector3:
+	var lead := Vector3(velocity.x, 0, velocity.z) * 0.22
+	var d: Vector3 = global_transform * l.rest + lead
+	var hit := G.ray(d + Vector3.UP * 3.0, d + Vector3.DOWN * 4.0, G.L_WORLD | G.L_PROPS, [], false)
+	if not hit.is_empty():
+		d.y = hit.position.y
+	else:
+		d.y = global_position.y
+	return d
+
+
+func _animate_walker(delta: float) -> void:
+	var sup := supports()
+	var hv := Vector2(velocity.x, velocity.z).length()
+	walk_phase += delta * hv * 2.0
+	var kk: Array = [0.18, 0.28, 0.5, 0.85, 1.0]
+	var k: float = kk[min(sup, 4)]
+	var target_ride = ride * k - crouch * ride * 0.25 + sin(walk_phase) * 0.04 * min(hv, 1.0)
+	if state == "air":
+		target_ride = ride * 0.9
+	ride_cur = lerp(ride_cur, target_ride, clamp(delta * 6.0, 0.0, 1.0))
+	body.position.y = ride_cur
+	var tilt_t := Vector2.ZERO
+	for l in legs:
+		if not l.ok:
+			tilt_t += Vector2(l.rest.x, l.rest.z).normalized()
+	if state == "stomp":
+		tilt_t += Vector2(0, 1.2)
+	tilt = tilt.lerp(tilt_t, clamp(delta * 4.0, 0.0, 1.0))
+	body.rotation = Vector3(-tilt.y * 0.22, 0.0, tilt.x * 0.22)
+	var cap := shape.shape as CapsuleShape3D
+	cap.height = max(ride_cur + 0.9, cfg.radius * 2.0 + 0.1)
+	shape.position.y = cap.height * 0.5
+
+	# шаги: ноги одной диагонали переставляются вместе
+	var stepping_group := -1
+	for l in legs:
+		if l.ok and l.t >= 0.0:
+			stepping_group = l.group
+	for l in legs:
+		if not l.ok:
+			_dangle(l, delta)
+			continue
+		if state == "air":
+			var tuck: Vector3 = global_transform * (l.rest * 0.6) + Vector3(0, ride_cur * 0.35, 0)
+			l.foot = l.foot.lerp(tuck, clamp(delta * 10.0, 0.0, 1.0))
+		elif l.t >= 0.0:
+			l.t += delta / cfg.step_time
+			var e: float = min(l.t, 1.0)
+			l.foot = l.from.lerp(l.to, e * e * (3.0 - 2.0 * e)) + Vector3.UP * sin(PI * e) * cfg.step_h
+			if l.t >= 1.0:
+				l.t = -1.0
+				l.foot = l.to
+				if step_snd_cd <= 0.0:
+					step_snd_cd = 0.12
+					Sfx.play3d("step", l.foot, -2.0 if kind == Kind.LEAPER else -6.0, randf_range(0.5, 0.65))
+		else:
+			var tgt := _foot_target(l)
+			var far: float = Vector2(tgt.x - l.foot.x, tgt.z - l.foot.z).length()
+			if far > cfg.step and (stepping_group == -1 or stepping_group == l.group):
+				l.from = l.foot
+				l.to = tgt
+				l.t = 0.0
+				stepping_group = l.group
+		_ik(l)
+
+
+func _ik(l: Dictionary) -> void:
+	var th: Node3D = l.thigh
+	var b2: Node3D = l.b2
+	var h := th.global_position
+	var t: Vector3 = l.foot
+	var out := h - body.global_position
+	out.y = 0
+	out = out.normalized() if out.length() > 0.01 else Vector3.RIGHT
+	var pole := Vector3.UP * 1.6 + out * 0.5
+	var k := _solve(h, t, l.a, l.b, pole)
+	var n := (t - h).cross(pole)
+	if n.length() < 0.001:
+		n = global_basis.x
+	n = n.normalized()
+	th.global_basis = _bone_basis(k - h, n)
+	b2.global_basis = _bone_basis(t - k, n)
+
+
+func _dangle(l: Dictionary, delta: float) -> void:
+	if not parts[l.thigh_name].alive or not is_instance_valid(l.thigh):
 		return
-	if dist > cfg.range * 1.6:
-		fire_timer = 0.5
+	var th: Node3D = l.thigh
+	l.swing += delta * 2.0
+	var h := th.global_position
+	var out := h - body.global_position
+	out.y = 0
+	out = out.normalized() if out.length() > 0.01 else Vector3.RIGHT
+	var dir := (out * 0.7 + Vector3.DOWN + global_basis.z * sin(l.swing) * 0.2).normalized()
+	var n := dir.cross(Vector3.UP)
+	if n.length() < 0.01:
+		n = Vector3.RIGHT
+	var target := _bone_basis(dir, n.normalized())
+	th.global_basis = th.global_basis.slerp(target, clamp(delta * 4.0, 0.0, 1.0)).orthonormalized()
+	if not is_instance_valid(l.b2):
 		return
-	var mpos := muzzle.global_position
-	var target: Vector3 = p.global_position + Vector3(0, 1.2, 0)
-	var los := G.ray(mpos, target, G.L_WORLD | G.L_PROPS, [], false)
-	if not los.is_empty():
-		fire_timer = 0.4
-		burst_left = 0
+	var b2: Node3D = l.b2
+	if b2.get_parent() == th:
+		b2.basis = b2.basis.slerp(Basis(Vector3.RIGHT, 0.6), clamp(delta * 3.0, 0.0, 1.0)).orthonormalized()
+
+
+static func _solve(h: Vector3, t: Vector3, a: float, b: float, pole: Vector3) -> Vector3:
+	var d := t - h
+	var dist: float = clamp(d.length(), absf(a - b) + 0.001, a + b - 0.001)
+	var dn := d.normalized() if d.length() > 0.0001 else Vector3.DOWN
+	var ca: float = clamp((a * a + dist * dist - b * b) / (2.0 * a * dist), -1.0, 1.0)
+	var ang := acos(ca)
+	var pp := pole - dn * pole.dot(dn)
+	if pp.length() < 0.0001:
+		pp = Vector3.UP
+	pp = pp.normalized()
+	return h + dn * cos(ang) * a + pp * sin(ang) * a
+
+
+static func _bone_basis(dir: Vector3, n: Vector3) -> Basis:
+	var y := -dir.normalized()
+	var x := n - y * n.dot(y)
+	if x.length() < 0.001:
+		x = y.cross(Vector3.FORWARD) if absf(y.z) < 0.9 else y.cross(Vector3.RIGHT)
+	x = x.normalized()
+	var z := x.cross(y).normalized()
+	return Basis(x, y, z)
+
+
+# ================================================================== летающие
+
+func rotors_alive() -> int:
+	var n := 0
+	for r in rotors:
+		if parts[r.name].alive:
+			n += 1
+	return n
+
+
+func _fly(delta: float) -> void:
+	var p := _player()
+	var lost := rotors.size() - rotors_alive()
+
+	if state == "crash":
+		velocity.y -= 16.0 * delta
+		velocity.x *= 0.99
+		velocity.z *= 0.99
+		spin += delta * 7.0
+		rotation.y += delta * spin * 0.5
+		move_and_slide()
+		if get_slide_collision_count() > 0 or is_on_floor():
+			die(Vector3.UP, 600.0)
 		return
-	if burst_left <= 0:
-		burst_left = cfg.burst
-	burst_left -= 1
-	fire_timer = cfg.fire_cd if burst_left > 0 else cfg.burst_cd * randf_range(0.8, 1.3)
-	var lead: Vector3 = p.velocity * (mpos.distance_to(target) / 38.0) * 0.5
-	var aim := (target + lead - mpos).normalized()
-	var spread := 0.03
-	if blind:
-		spread = 0.16
-	if crippled:
-		spread *= 1.6
+
+	if state == "drop":
+		velocity = velocity.lerp(Vector3.ZERO, delta * 1.5)
+		move_and_slide()
+		if velocity.length() < 1.5:
+			state = "fly"
+		return
+
+	if state == "dive":
+		if p == null:
+			state = "fly"
+			return
+		var to: Vector3 = p.global_position + Vector3(0, 1.0, 0) - global_position
+		velocity = velocity.lerp(to.normalized() * 17.0, clamp(delta * 3.0, 0.0, 1.0))
+		move_and_slide()
+		if to.length() < 2.0 or get_slide_collision_count() > 0:
+			die(velocity.normalized(), 500.0)
+		return
+
+	var target := global_position
+	if p:
+		orbit += delta * (0.25 if kind == Kind.ROCKETEER else 0.45) * strafe
+		strafe_t -= delta
+		if strafe_t <= 0.0:
+			strafe_t = randf_range(2.0, 5.0)
+			if randf() < 0.4:
+				strafe = -strafe
+		var alt: float = cfg.alt * (1.0 - 0.3 * lost) + sin(Time.get_ticks_msec() * 0.001 + orbit) * 1.2
+		var dist: float = cfg.dist
+		if blind:
+			dist *= 0.6
+			orbit += delta * 1.5
+		target = p.global_position + Vector3(cos(orbit), 0, sin(orbit)) * dist + Vector3.UP * alt
+	var gh := G.ray(global_position, global_position + Vector3.DOWN * 3.0, G.L_WORLD | G.L_PROPS, [], false)
+	if not gh.is_empty():
+		target.y = max(target.y, gh.position.y + 2.8)
+	var desired := (target - global_position)
+	var speed: float = cfg.speed * (1.0 - 0.25 * lost)
+	var want := desired.limit_length(speed)
+	if velocity.length() > 0.5:
+		var ob := G.ray(global_position, global_position + velocity.normalized() * 4.0, G.L_WORLD | G.L_PROPS, [get_rid()], false)
+		if not ob.is_empty():
+			want += ob.normal * speed + Vector3.UP * speed * 0.6
+	velocity = velocity.lerp(want, clamp(delta * 1.6, 0.0, 1.0))
+	if lost > 0:
+		wobble += delta * 6.0
+		velocity += Vector3(sin(wobble * 1.3), sin(wobble) * 0.6, cos(wobble * 0.9)) * 2.0 * lost * delta
+	velocity += knock
+	knock = Vector3.ZERO
+	move_and_slide()
+
+	if p:
+		var to: Vector3 = p.global_position - global_position
+		var yaw := atan2(-to.x, -to.z)
+		rotation.y = lerp_angle(rotation.y, yaw, clamp(delta * 2.5, 0.0, 1.0))
+		if kind == Kind.HORNET:
+			_hornet_gun(delta, p)
+		else:
+			_rocket_logic(delta, p)
+
+
+func _hornet_gun(delta: float, p: Node) -> void:
+	if not parts.has("gun") or not parts.gun.alive or muzzles.is_empty() or not is_instance_valid(muzzles[0]):
+		if global_position.distance_to(p.global_position) < 30.0 and state == "fly":
+			state = "dive"
+			Sfx.play3d("alarm", global_position, -4.0, 1.8)
+		return
+	fire_cd -= delta
+	if fire_cd > 0.0:
+		return
+	var m: Vector3 = muzzles[0].global_position
+	var tgt: Vector3 = p.global_position + Vector3(0, 1.2, 0)
+	if not G.ray(m, tgt, G.L_WORLD | G.L_PROPS, [], false).is_empty():
+		fire_cd = 0.5
+		return
+	if burst <= 0:
+		burst = 4
+	burst -= 1
+	fire_cd = 0.12 if burst > 0 else randf_range(1.6, 2.4)
+	var lead: Vector3 = p.velocity * (m.distance_to(tgt) / 38.0) * 0.5
+	var aim := (tgt + lead - m).normalized()
+	var spread := 0.18 if blind else 0.03
 	aim = (aim + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * spread).normalized()
-	Projectile.robot_bolt(mpos, aim, cfg.dmg)
-	recoil = 1.0
-	Sfx.play3d("robot_shot", mpos, -3.0, randf_range(0.9, 1.1) / sqrt(s))
-	Fx.flash(mpos, cfg.eye, 2.0, 3.0, 0.08)
+	Projectile.robot_bolt(m, aim, 6.0)
+	Sfx.play3d("robot_shot", m, -2.0, randf_range(0.9, 1.1))
+	Fx.flash(m, Color(1.0, 0.25, 0.1), 2.0, 3.0, 0.08)
 
 
-func _melee_hit(p: Node, dist: float, dir: Vector3) -> void:
-	attack_cd = 1.7 if kind == Kind.BRUTE else 1.1
-	var reach: float = (cfg.range if kind == Kind.BRUTE else 2.2) + 0.6
-	var hit_pos := global_position + dir * 1.4 * s
-	Fx.dust(hit_pos, 0.8 * s)
-	Sfx.play3d("impact" if kind == Kind.BRUTE else "clang", hit_pos, 0.0, 0.8)
-	if dist <= reach and not crippled or dist <= reach * 0.6:
-		p.take_damage(cfg.melee_dmg, global_position)
-		p.knockback(dir * (16.0 if kind == Kind.BRUTE else 7.0) + Vector3.UP * (6.0 if kind == Kind.BRUTE else 2.0))
-	if kind == Kind.BRUTE:
-		# ударная волна по обломкам
-		var q := PhysicsShapeQueryParameters3D.new()
-		var sp := SphereShape3D.new()
-		sp.radius = 3.0
-		q.shape = sp
-		q.transform = Transform3D(Basis(), hit_pos)
-		q.collision_mask = G.L_DEBRIS | G.L_PROPS
-		for r in get_world_3d().direct_space_state.intersect_shape(q, 64):
-			var c = r.collider
-			if c is RigidBody3D and not c.freeze:
-				c.apply_central_impulse((c.global_position - hit_pos).normalized() * c.mass * 4.0 + Vector3.UP * c.mass * 3.0)
+func _rocket_logic(delta: float, p: Node) -> void:
+	var pods: Array = []
+	for m in muzzles:
+		if is_instance_valid(m) and m.get_parent() and m.get_parent().has_meta("pid") and parts[m.get_parent().get_meta("pid")].alive:
+			pods.append(m)
+	if pods.is_empty():
+		if state == "fly" and global_position.distance_to(p.global_position) < 40.0:
+			state = "dive"
+			Sfx.play3d("alarm", global_position, -2.0, 1.4)
+		lock_beam.visible = false
+		return
+	var tgt: Vector3 = p.global_position + Vector3(0, 1.0, 0)
+	if lock_t >= 0.0:
+		lock_t += delta
+		_show_beam(pods[0].global_position, tgt)
+		if lock_t >= 1.3:
+			lock_t = -1.0
+			lock_beam.visible = false
+			for i in pods.size():
+				var mz: Node3D = pods[i]
+				for k in 2:
+					var spread = Vector3(randf_range(-1, 1), randf_range(-0.2, 0.6), randf_range(-1, 1)) * (3.0 if blind else 1.4)
+					get_tree().create_timer(0.12 * (i * 2 + k), false).timeout.connect(
+						_launch_rocket.bind(mz, tgt + spread))
+			fire_cd = randf_range(4.5, 6.5)
+		return
+	fire_cd -= delta
+	if fire_cd <= 0.0 and G.ray(pods[0].global_position, tgt, G.L_WORLD, [], false).is_empty():
+		lock_t = 0.0
+		Sfx.play3d("alarm", global_position, -6.0, 2.2)
 
 
-func _land() -> void:
-	state = "active"
-	land_timer = 0.45
-	thruster.queue_free()
-	thruster = null
-	Fx.dust(global_position, 1.2 * s)
-	Sfx.play3d("step", global_position, 6.0, 0.5)
-	if G.player and is_instance_valid(G.player):
-		var d: float = G.player.global_position.distance_to(global_position)
-		G.player.add_shake(clamp(0.5 - d / 40.0, 0.0, 0.5) * s)
+func _launch_rocket(mz: Node3D, tgt: Vector3) -> void:
+	if dead or not is_instance_valid(mz) or not is_inside_tree():
+		return
+	var m := mz.global_position
+	Projectile.robot_rocket(m, (tgt - m).normalized())
+	Sfx.play3d("rocket", m, -2.0, 1.2)
+	Fx.flash(m, Color(1.0, 0.5, 0.2), 3.0, 4.0, 0.1)
+
+
+func _show_beam(a: Vector3, b: Vector3) -> void:
+	lock_beam.visible = true
+	var ln := a.distance_to(b)
+	if ln < 0.1:
+		return
+	lock_beam.global_transform = Transform3D(Basis(), (a + b) * 0.5)
+	lock_beam.look_at(b, Vector3.UP if absf((b - a).normalized().y) < 0.98 else Vector3.RIGHT)
+	lock_beam.scale = Vector3(1, 1, ln)
+
+
+func _animate_flyer(delta: float) -> void:
+	for r in rotors:
+		if parts[r.name].alive and r.blades and is_instance_valid(r.blades):
+			r.blades.rotate_y(delta * 40.0)
+	var lv := global_basis.inverse() * velocity
+	var lost := rotors.size() - rotors_alive()
+	var roll := -lv.x * 0.04
+	var pitch := lv.z * 0.04
+	if lost > 0:
+		roll += sin(wobble) * 0.25 * lost
+	model.rotation.x = lerp(model.rotation.x, clamp(pitch, -0.5, 0.5), clamp(delta * 4.0, 0.0, 1.0))
+	model.rotation.z = lerp(model.rotation.z, clamp(roll, -0.6, 0.6), clamp(delta * 4.0, 0.0, 1.0))
+	model.position.y = sin(Time.get_ticks_msec() * 0.003 + orbit) * 0.08
 
 
 func knockback(v: Vector3) -> void:
 	if dead:
 		return
-	var resist := 1.0 / (s * bulk * (2.2 if kind == Kind.BRUTE else 1.0))
-	knock += v * resist
+	var mass := 3.0 if kind == Kind.LEAPER else (2.5 if kind == Kind.CRAB else 1.0)
+	knock += v / mass
 
 
-# =================================================================== анимация
-
-func _process(delta: float) -> void:
-	if dead or rig == null:
-		return
-	var hs := Vector2(velocity.x, velocity.z).length()
-	var moving: float = clamp(hs / max(cfg.speed, 0.1), 0.0, 1.2)
-	walk_phase += delta * hs * (2.2 / s)
-	recoil = move_toward(recoil, 0.0, delta * 8.0)
-
-	var hips: Dictionary = parts.hips
-	if crippled:
-		hips.node.position.y = lerp(hips.node.position.y, 0.35 * s, delta * 6.0)
-		hips.node.rotation.x = lerp(hips.node.rotation.x, -0.55, delta * 5.0)
-		hips.node.rotation.z = sin(walk_phase * 1.5) * 0.12
-		for side in ["_l", "_r"]:
-			if parts["thigh" + side].alive:
-				parts["thigh" + side].node.rotation.x = lerp(parts["thigh" + side].node.rotation.x, 1.4, delta * 5.0)
-			if parts["shin" + side].alive:
-				parts["shin" + side].node.rotation.x = lerp(parts["shin" + side].node.rotation.x, -1.9, delta * 5.0)
-	else:
-		hips.node.position.y = 1.0 * s + abs(sin(walk_phase)) * 0.05 * s * moving
-		hips.node.rotation.z = sin(walk_phase) * 0.04 * moving
-		var sw := 0.55 * moving
-		for i in 2:
-			var side := "_l" if i == 0 else "_r"
-			var ph := walk_phase + (0.0 if i == 0 else PI)
-			if parts["thigh" + side].alive:
-				parts["thigh" + side].node.rotation.x = sin(ph) * sw
-			if parts["shin" + side].alive:
-				parts["shin" + side].node.rotation.x = -max(0.0, sin(ph + PI * 0.5)) * 0.9 * moving
-
-	# корпус дышит / качается
-	if parts.torso.alive:
-		_lean = lerp(_lean, -0.12 * moving, delta * 4.0)
-		parts.torso.node.rotation.x = _lean + (sin(Time.get_ticks_msec() * 0.003 + think_offset) * 0.02)
-
-	# цель
-	var aim_pitch := 0.0
-	var p = G.player
-	if p and is_instance_valid(p) and parts.arm_r.alive:
-		var sh: Vector3 = parts.arm_r.node.global_position
-		var tgt: Vector3 = p.global_position + Vector3(0, 1.2, 0)
-		var hd := Vector2(tgt.x - sh.x, tgt.z - sh.z).length()
-		aim_pitch = atan2(tgt.y - sh.y, hd)
-
-	# руки
-	var swing := sin(walk_phase) * 0.45 * moving
-	if parts.arm_l.alive:
-		if windup > 0.0:
-			parts.arm_l.node.rotation.x = lerp(parts.arm_l.node.rotation.x, PI * 0.95, delta * 10.0)
-		elif kind == Kind.BRUTE and attack_cd > 1.2:
-			parts.arm_l.node.rotation.x = lerp(parts.arm_l.node.rotation.x, PI * 0.35, delta * 14.0)
-		else:
-			parts.arm_l.node.rotation.x = lerp(parts.arm_l.node.rotation.x, swing + 0.1, delta * 8.0)
-		parts.arm_l.node.rotation.z = -0.1
-	if parts.arm_r.alive:
-		if has_gun:
-			var r := PI * 0.5 + aim_pitch + recoil * 0.25
-			parts.arm_r.node.rotation.x = lerp(parts.arm_r.node.rotation.x, r, delta * 12.0)
-		elif windup > 0.0:
-			parts.arm_r.node.rotation.x = lerp(parts.arm_r.node.rotation.x, PI * 0.95, delta * 10.0)
-		elif attack_cd > (1.2 if kind == Kind.BRUTE else 0.7):
-			parts.arm_r.node.rotation.x = lerp(parts.arm_r.node.rotation.x, PI * 0.35, delta * 14.0)
-		else:
-			parts.arm_r.node.rotation.x = lerp(parts.arm_r.node.rotation.x, -swing + 0.1, delta * 8.0)
-		parts.arm_r.node.rotation.z = 0.1
-	if parts.fore_l.alive:
-		parts.fore_l.node.rotation.x = 0.35 + (0.6 if windup > 0.0 else 0.0)
-	if parts.fore_r.alive:
-		parts.fore_r.node.rotation.x = 0.0 if has_gun else 0.35 + (0.6 if windup > 0.0 else 0.0)
-
-	if parts.head.alive:
-		parts.head.node.rotation.x = lerp(parts.head.node.rotation.x, aim_pitch * 0.5, delta * 6.0)
-
-	# мигание повреждённых частей
-	for pn in parts:
-		var pp: Dictionary = parts[pn]
-		var m: StandardMaterial3D = pp.mats.main
-		if m.emission_energy_multiplier > 0.0:
-			var e = move_toward(m.emission_energy_multiplier, 0.0, delta * 30.0)
-			for k in pp.mats:
-				pp.mats[k].emission_energy_multiplier = e
-
-
-# =================================================================== урон
+# ================================================================== урон
 
 func damage_part(pname: String, dmg: float, pos: Vector3, dir: Vector3, force: float, crit: bool = false) -> void:
-	if dead or state == "drop" and dmg < 1.0:
-		return
-	if not parts.has(pname):
+	if dead or not parts.has(pname):
 		return
 	var p: Dictionary = parts[pname]
 	if not p.alive:
 		return
-	if p.redirect != "":
-		pname = p.redirect
-		p = parts[pname]
-		if not p.alive:
-			return
+	var is_crit: bool = crit or p.weak or p.crit > 0.0
+	flash = 0.3 if is_crit else 0.15
+	if fx_cd <= 0.0:
+		fx_cd = 0.06
+		Fx.sparks(pos, -dir + Vector3.UP * 0.3, 8 if dmg < 30 else 18, 6.0)
+	if snd_cd <= 0.0:
+		snd_cd = 0.08
+		Sfx.play3d("clang" if dmg >= 25 or is_crit else "hit", pos, -4.0 if dmg < 25 else 0.0, randf_range(0.8, 1.25))
+	if G.hud:
+		G.hud.hitmarker(is_crit)
+	if state != "drop":
+		knock += dir * min(force * 0.0015, 1.5)
+
+	if p.crit > 0.0:
+		_damage_body(dmg * p.crit, dir, force)
+		return
+	if p.type == "body":
+		_damage_body(dmg, dir, force)
+		return
 	var absorbed: float = min(dmg, max(p.hp, 0.0))
 	p.hp -= dmg
-	if pname != "torso":
-		parts.torso.hp -= absorbed * 0.18
-	# вспышка попадания
-	for k in p.mats:
-		p.mats[k].emission_energy_multiplier = 1.4 if crit else 0.8
-	_tint(p)
-	if fx_cooldown <= 0.0:
-		fx_cooldown = 0.07
-		Fx.sparks(pos, -dir + Vector3.UP * 0.3, 8 if dmg < 30 else 20, 6.0)
-	if sound_cooldown <= 0.0:
-		sound_cooldown = 0.09
-		Sfx.play3d("clang" if dmg >= 25 or crit else "hit", pos, -4.0 if dmg < 25 else 0.0, randf_range(0.8, 1.25))
-	if G.hud:
-		G.hud.hitmarker(crit)
-	knock += dir * min(force * 0.002, 2.0) / (s * bulk)
-
-	if pname == "torso":
-		if p.hp <= 0.0:
-			die(dir, force)
-		return
+	parts.body.hp -= absorbed * 0.2
 	if p.hp <= 0.0:
-		_detach(pname, dir, force, true)
-	if not dead and parts.torso.hp <= 0.0:
+		_break(pname, dir, force)
+	if not dead and parts.body.hp <= 0.0:
 		die(dir, force)
 
 
-func _tint(p: Dictionary) -> void:
-	var r: float = clamp(p.hp / max(p.max, 1.0), 0.0, 1.0)
-	var burnt := Color(0.07, 0.06, 0.05)
-	for k in ["main", "accent"]:
-		var base: Color = cfg[k]
-		p.mats[k].albedo_color = base.lerp(burnt, (1.0 - r) * 0.65)
-		p.mats[k].roughness = lerp(0.38, 0.85, 1.0 - r)
+func _damage_body(dmg: float, dir: Vector3, force: float) -> void:
+	parts.body.hp -= dmg
+	if parts.body.hp <= 0.0:
+		die(dir, force)
 
 
-func _subtree(pname: String) -> Array:
-	var out := [pname]
-	for k in parts[pname].kids:
-		out.append_array(_subtree(k))
-	return out
-
-
-func _detach(pname: String, dir: Vector3, force: float, scored: bool) -> RigidBody3D:
+func _break(pname: String, dir: Vector3, force: float) -> void:
 	var p: Dictionary = parts[pname]
-	var names := _subtree(pname)
-	for n in names:
-		if not parts[n].alive and n != pname:
-			continue
-		parts[n].alive = false
-		for a in parts[n].areas:
-			if is_instance_valid(a):
-				a.queue_free()
-		parts[n].areas.clear()
-	p.alive = false
+	var pos: Vector3 = p.node.global_position
+	_detach(pname, dir, force)
+	G.parts_ripped += 1
+	G.add_score(60 if p.weak else 35, BREAK_TEXT.get(p.type, "ДЕТАЛЬ ОТОРВАНА"))
+	Sfx.play3d("clang", pos, 4.0, randf_range(0.55, 0.75))
+	if p.weak:
+		Fx.flash(pos, Color(1.0, 0.7, 0.3), 5.0, 5.0, 0.25)
+		parts.body.hp -= parts.body.max * 0.08
+		G.hitstop(0.035)
+	match p.type:
+		"eye":
+			blind = true
+			Fx.sparks(pos, -dir, 30, 8.0, Color(0.4, 0.8, 1.0))
+		"rotor":
+			var lost := rotors.size() - rotors_alive()
+			if lost >= cfg.crash_at and state != "crash":
+				state = "crash"
+				spin = 2.0
+				Fx.smoke_emitter(body, Vector3.ZERO, -1.0)
+				Sfx.play3d("alarm", global_position, 0.0, 0.9)
+	if not flyer:
+		for l in legs:
+			l.ok = true
+			for n in l.chain:
+				if not parts[n].alive:
+					l.ok = false
+		if supports() <= 1 and state == "air":
+			state = "move"
+	if not dead and parts.body.hp <= 0.0:
+		die(dir, force)
 
-	var pivot: Node3D = p.node
-	var parent := pivot.get_parent() as Node3D
-	var joint_world := pivot.global_position
-	var rb := _make_debris(pivot)
-	if rb == null:
-		return null
-	# пыхаем обрубок
+
+func _detach(pname: String, dir: Vector3, force: float) -> RigidBody3D:
+	var p: Dictionary = parts[pname]
+	var node: Node3D = p.node
+	var stack: Array = [node]
+	while stack.size() > 0:
+		var n: Node = stack.pop_back()
+		if n.has_meta("pid") and parts.has(n.get_meta("pid")):
+			var pp: Dictionary = parts[n.get_meta("pid")]
+			pp.alive = false
+			for a in pp.areas:
+				if is_instance_valid(a):
+					a.queue_free()
+			pp.areas.clear()
+		for c in n.get_children():
+			stack.append(c)
+	var parent := node.get_parent() as Node3D
+	var joint := node.global_position
+	var rb := _make_debris(node)
 	if not dead and parent and is_instance_valid(parent):
-		Fx.spark_emitter(parent, pivot.position if pivot.get_parent() == parent else parent.to_local(joint_world), -1.0 if pname == "head" else 6.0)
-	Fx.spark_emitter(rb, Vector3.ZERO, 4.0)
-	if randf() < 0.5:
-		Fx.smoke_emitter(rb, Vector3.ZERO, 6.0)
-	var m := rb.mass
-	var push := dir.normalized() if dir.length() > 0.01 else Vector3.UP
-	rb.apply_central_impulse(push * (m * 4.0 + force * 0.015) + Vector3.UP * m * 3.5)
-	rb.angular_velocity = Vector3(randf_range(-9, 9), randf_range(-9, 9), randf_range(-9, 9))
-	Fx.sparks(joint_world, push, 26, 9.0)
-
-	if scored:
-		G.parts_ripped += 1
-		G.add_score(25 * (2 if kind == Kind.BRUTE else 1), PART_NAMES.get(pname, "ОТОРВАНО"))
-		Sfx.play3d("clang", joint_world, 3.0, randf_range(0.6, 0.8))
-		_update_caps()
+		Fx.spark_emitter(parent, parent.to_local(joint), 6.0)
+	if rb:
+		Fx.spark_emitter(rb, Vector3.ZERO, 3.0)
+		if randf() < 0.5:
+			Fx.smoke_emitter(rb, Vector3.ZERO, 5.0)
+		var push := dir.normalized() if dir.length() > 0.01 else Vector3.UP
+		rb.apply_central_impulse(push * (rb.mass * 3.5 + force * 0.015) + Vector3.UP * rb.mass * 3.0)
+		rb.angular_velocity = Vector3(randf_range(-7, 7), randf_range(-7, 7), randf_range(-7, 7))
+	Fx.sparks(joint, dir, 22, 9.0)
 	return rb
 
 
-func _make_debris(pivot: Node3D) -> RigidBody3D:
-	var rb := WallChunk.new()       # тот же скрипт: обломок, который можно пинать и стрелять
+func _make_debris(node: Node3D) -> RigidBody3D:
+	var rb := WallChunk.new()
 	rb.broken = true
 	rb.collision_layer = G.L_DEBRIS
 	rb.collision_mask = G.L_WORLD | G.L_DEBRIS | G.L_PROPS | G.L_PLAYER | G.L_ROBOT
 	G.world.add_child(rb)
-	rb.global_transform = pivot.global_transform.orthonormalized()
+	rb.global_transform = node.global_transform.orthonormalized()
 	var meshes: Array = []
-	_collect_meshes(pivot, meshes)
-	pivot.reparent(rb, true)
+	_collect_meshes(node, meshes)
+	node.reparent(rb, true)
 	var vol := 0.0
 	var inv := rb.global_transform.affine_inverse()
 	for mi in meshes:
-		if not is_instance_valid(mi):
+		if not is_instance_valid(mi) or mi.mesh == null:
 			continue
 		var aabb: AABB = mi.get_aabb()
-		var size := aabb.size
-		if size.x < 0.03 or size.y < 0.03 or size.z < 0.03:
-			continue
+		var size = aabb.size.max(Vector3(0.06, 0.06, 0.06))
 		var cs := CollisionShape3D.new()
 		var bs := BoxShape3D.new()
 		bs.size = size
@@ -702,42 +955,19 @@ func _make_debris(pivot: Node3D) -> RigidBody3D:
 		rb.add_child(cs)
 		cs.transform = (inv * mi.global_transform) * Transform3D(Basis(), aabb.get_center())
 		vol += size.x * size.y * size.z
-	if rb.get_child_count() == 0:
-		rb.queue_free()
-		return null
-	rb.mass = clamp(vol * 700.0, 3.0, 160.0)
+	rb.mass = clamp(vol * 500.0, 3.0, 250.0)
 	rb.physics_material_override = WallChunk.debris_phys()
-	rb.linear_velocity = velocity * 0.6
+	rb.linear_velocity = velocity * 0.7
 	G.add_debris(rb)
 	return rb
 
 
 func _collect_meshes(n: Node, out: Array) -> void:
+	if n is MeshInstance3D:
+		out.append(n)
 	for c in n.get_children():
-		if c is MeshInstance3D:
-			out.append(c)
-		if c is Node3D and not (c is Hitbox):
+		if not (c is Hitbox):
 			_collect_meshes(c, out)
-
-
-func _update_caps() -> void:
-	if not parts.head.alive and not blind:
-		blind = true
-	if has_gun and (not parts.fore_r.alive or not parts.arm_r.alive):
-		has_gun = false
-		muzzle = null
-		attack_cd = 0.5
-	var legs_ok: bool = parts.thigh_l.alive and parts.thigh_r.alive and parts.shin_l.alive and parts.shin_r.alive
-	if not legs_ok and not crippled:
-		crippled = true
-		capsule.height = max(capsule.radius * 2.0, 1.2 * s)
-		shape.position = Vector3(0, capsule.height * 0.5, 0)
-		Fx.dust(global_position, s)
-		Sfx.play3d("step", global_position, 4.0, 0.5)
-	var arms_gone: bool = not parts.arm_l.alive and not parts.arm_r.alive
-	if crippled and arms_gone and self_destruct < 0.0:
-		self_destruct = 1.6
-		Sfx.play3d("alarm", global_position, -4.0, 1.6)
 
 
 func die(dir: Vector3, force: float, silent: bool = false) -> void:
@@ -745,29 +975,41 @@ func die(dir: Vector3, force: float, silent: bool = false) -> void:
 		return
 	dead = true
 	state = "dead"
-	var center: Vector3 = parts.torso.node.global_position + Vector3(0, 0.4 * s, 0)
+	lock_beam.visible = false
+	var center := body.global_position
 	if G.main:
 		G.main.on_robot_killed(self, center)
 	if silent:
 		queue_free()
 		return
 	G.kills += 1
-	G.add_score(cfg.score, "%s УНИЧТОЖЕН" % cfg.name.to_upper())
-	if core_light:
-		core_light.queue_free()
-	eye_mat.emission_energy_multiplier = 0.0
-	var order := ["fore_l", "fore_r", "shin_l", "shin_r", "head", "arm_l", "arm_r", "thigh_l", "thigh_r", "torso", "hips"]
+	G.add_score(cfg.score, "%s УНИЧТОЖЕН" % String(cfg.name).to_upper())
+	for nm in ["glow_blue", "glow_red"]:
+		if mats.has(nm):
+			mats[nm].emission_energy_multiplier = 0.0
+	var order: Array = []
+	var depth := {}
+	for n in parts:
+		if parts[n].alive and is_instance_valid(parts[n].node):
+			order.append(n)
+			depth[n] = _depth(parts[n].node)
+	order.sort_custom(func(a, b): return depth[a] > depth[b])
 	for n in order:
-		var p: Dictionary = parts[n]
-		if not (p.alive or (n == "hips" and is_instance_valid(p.node) and p.node.get_parent() == rig)):
+		if n == "body" or not parts[n].alive:
 			continue
-		var out: Vector3 = p.node.global_position - center
+		var out: Vector3 = parts[n].node.global_position - center
 		out = out.normalized() if out.length() > 0.01 else Vector3.UP
-		var push := (out * 1.3 + dir.normalized() * 0.8 + Vector3.UP * 0.6).normalized()
-		_detach(n, push, force * 0.6 + 350.0, false)
-	shape.disabled = true
-	G.get_tree().create_timer(0.06, false).timeout.connect(
-		G.explode.bind(center, 2.6 * s, 45.0, 700.0, 0.45, false))
-	if thruster:
-		thruster.queue_free()
+		_detach(n, (out * 1.2 + dir.normalized() * 0.7 + Vector3.UP * 0.6).normalized(), force * 0.5 + 300.0)
+	parts.body.alive = false
+	_detach("body", (dir + Vector3.UP).normalized(), force * 0.3 + 200.0)
+	var r := 3.2 if kind in [Kind.LEAPER, Kind.ROCKETEER] else 2.4
+	G.get_tree().create_timer(0.05, false).timeout.connect(G.explode.bind(center, r, 60.0, 900.0, 0.5, true))
 	queue_free()
+
+
+func _depth(n: Node) -> int:
+	var d := 0
+	while n and n != self:
+		n = n.get_parent()
+		d += 1
+	return d

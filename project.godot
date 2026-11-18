@@ -17,6 +17,7 @@ config/windows_native_icon=""
 G="*res://scripts/g.gd"
 Sfx="*res://scripts/sfx.gd"
 Fx="*res://scripts/fx.gd"
+Mats="*res://scripts/mats.gd"
 
 [display]
 

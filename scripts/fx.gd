@@ -320,3 +320,33 @@ func beam(from: Vector3, to: Vector3, color: Color, width: float, dur: float) ->
 	var t := mi.create_tween()
 	t.tween_property(m, "albedo_color", Color(color.r, color.g, color.b, 0.0), dur)
 	t.tween_callback(mi.queue_free)
+
+
+## Красный круг на земле, куда упадёт снаряд.
+func warning_ring(pos: Vector3, radius: float, dur: float) -> Node3D:
+	if G.world == null:
+		return null
+	var hit := G.ray(pos + Vector3.UP * 4.0, pos + Vector3.DOWN * 10.0, G.L_WORLD, [], false)
+	var gp: Vector3 = hit.position if not hit.is_empty() else pos
+	var mi := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = radius * 0.92
+	tm.outer_radius = radius
+	tm.rings = 40
+	tm.ring_segments = 4
+	mi.mesh = tm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_color = Color(1.0, 0.15, 0.05, 0.9)
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	G.world.add_child(mi)
+	mi.global_position = gp + Vector3(0, 0.06, 0)
+	mi.scale = Vector3(1, 0.05, 1)
+	var t := mi.create_tween().set_loops(int(dur / 0.3) + 1)
+	t.tween_property(m, "albedo_color:a", 0.25, 0.15)
+	t.tween_property(m, "albedo_color:a", 0.9, 0.15)
+	mi.create_tween().tween_callback(mi.queue_free).set_delay(dur + 0.6)
+	return mi
