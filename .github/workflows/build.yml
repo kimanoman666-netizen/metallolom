@@ -1,0 +1,79 @@
+name: Сборка METALLOLOM.exe
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.6.1
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Кэш Godot
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-win-v1
+
+      - name: Скачать Godot и шаблоны экспорта
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot && cd ~/godot
+          BASE=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          wget -q $BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          wget -q $BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          mkdir -p win
+          cp templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe templates/version.txt win/
+          rm -rf templates *.zip *.tpz
+
+      - name: Установить шаблоны
+        run: |
+          DEST=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p $DEST
+          cp ~/godot/win/* $DEST/
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> $GITHUB_ENV
+
+      - name: Импорт проекта
+        run: $GODOT --headless --path . --import 2>&1 | tee import.log; ! grep -E "SCRIPT ERROR|Parse Error" import.log
+
+      - name: Автотест (бот играет 37 секунд)
+        run: |
+          timeout 300 $GODOT --headless --path . -- --autotest 2>&1 | tee autotest.log
+          grep -q "\[autotest\] OK" autotest.log
+          ! grep -E "SCRIPT ERROR|Parse Error" autotest.log
+
+      - name: Экспорт Windows .exe
+        run: |
+          mkdir -p build
+          $GODOT --headless --path . --export-release "Windows Desktop" build/METALLOLOM.exe
+          ls -la build
+          test -s build/METALLOLOM.exe
+
+      - name: Сохранить артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: METALLOLOM-windows
+          path: build/METALLOLOM.exe
+
+      - name: Опубликовать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=build-${{ github.run_number }}
+          MSG=$(git log -1 --pretty=%s)
+          gh release create "$TAG" build/METALLOLOM.exe \
+            --title "МЕТАЛЛОЛОМ — сборка ${{ github.run_number }}" \
+            --notes "Скачай METALLOLOM.exe и запусти. Изменения: $MSG" \
+            --latest
