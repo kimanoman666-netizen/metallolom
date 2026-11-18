@@ -511,15 +511,16 @@ func _hitscan(w: Dictionary) -> void:
 			if w.id == "shotgun":
 				dmg *= clamp(1.0 - (dist - 8.0) / 30.0, 0.3, 1.0)
 			G.apply_hit(hit.collider, dmg, end, dir, w.force)
-			if not (hit.collider is Hitbox) and (_impact_cd <= 0.0 or pellets == 1):
+			if not (hit.collider is Hitbox) and (_impact_cd <= 0.0 or pellets == 1 or i < 4):
 				_impact_cd = 0.03
-				Fx.sparks(end, hit.normal, 5, 4.0)
-				if hit.collider is StaticBody3D or hit.collider is WallChunk:
-					Fx.chips(end, hit.normal, 3, Color(0.4, 0.38, 0.35))
+				Fx.impact(end, hit.normal, hit.collider)
 		if i < 3:
 			Fx.beam(m, end, w.tracer * 3.0, 0.02 if w.id != "rifle" else 0.035, 0.06 if w.id != "rifle" else 0.12)
 	vm.add_kick(w.kick * lerp(1.0, 0.5, aim_t))
 	vm.on_shot()
+	Fx.muzzle_flash(m, 0.5 if w.id == "shotgun" else (0.28 if w.id == "minigun" else 0.4))
+	var b := cam.global_basis
+	Fx.shell(m - (-b.z) * 0.55 + b.x * 0.06 - b.y * 0.02, b.x * randf_range(2.0, 3.0) + b.y * randf_range(1.5, 2.5) + velocity * 0.8, w.id == "shotgun")
 	add_shake(w.kick * 0.18)
 	Sfx.play2d(w.snd, -3.0 if w.id != "minigun" else -8.0, randf_range(0.94, 1.06))
 	Fx.flash(m, Color(1.0, 0.75, 0.4), 3.0 if w.id != "minigun" else 1.5, 5.0, 0.05)

@@ -14,35 +14,20 @@ static func crate(pos: Vector3, size: float = 1.0) -> Prop:
 	var p := Prop.new()
 	p.type = Type.CRATE
 	p.hp = 45.0 * size
-	p.mass = 25.0 * size * size * size
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3.ONE * size
-	mi.mesh = bm
-	p._mat = StandardMaterial3D.new()
-	p._mat.albedo_color = Color(0.52, 0.38, 0.22)
-	p._mat.roughness = 0.85
-	if G.main and G.main.wood_tex:
-		p._mat.albedo_texture = G.main.wood_tex
-	mi.material_override = p._mat
-	p.add_child(mi)
-	# рёбра ящика
-	for i in 4:
-		var e := MeshInstance3D.new()
-		var em := BoxMesh.new()
-		em.size = Vector3(size * 1.02, size * 0.12, size * 0.12)
-		e.mesh = em
-		e.material_override = Fx.solid_mat(Color(0.3, 0.2, 0.1), 0.0, 0.9)
-		e.position = Vector3(0, (0.45 if i < 2 else -0.45) * size, (0.45 if i % 2 == 0 else -0.45) * size)
-		p.add_child(e)
+	p.mass = 22.0 * size
+	var vis := Assets.whole("wooden_crate_01")
+	p.add_child(vis)
+	vis.scale = Vector3.ONE * size
+	p._mat = Assets.pbr("rusty_metal_02", Color(0.55, 0.4, 0.25), 0.8, false, 0.0)
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3.ONE * size
+	bs.size = Vector3(0.83, 0.34, 0.41) * size
 	cs.shape = bs
+	cs.position.y = 0.17 * size
 	p.add_child(cs)
 	p._common()
 	G.world.add_child(p)
-	p.global_position = pos
+	p.global_position = pos - Vector3(0, 0.17 * size, 0)
 	p.rotation.y = randf_range(-0.3, 0.3)
 	return p
 
@@ -52,51 +37,44 @@ static func barrel(pos: Vector3) -> Prop:
 	p.type = Type.BARREL
 	p.hp = 22.0
 	p.mass = 30.0
-	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.38
-	cm.bottom_radius = 0.38
-	cm.height = 1.15
-	cm.radial_segments = 20
-	mi.mesh = cm
+	var vis := Assets.whole("barrel_03")
+	p.add_child(vis)
 	p._mat = StandardMaterial3D.new()
-	p._mat.albedo_color = Color(0.75, 0.1, 0.05)
-	p._mat.metallic = 0.6
-	p._mat.roughness = 0.45
 	p._mat.emission_enabled = true
 	p._mat.emission = Color(1.0, 0.4, 0.1)
 	p._mat.emission_energy_multiplier = 0.0
-	mi.material_override = p._mat
-	p.add_child(mi)
-	for y in [-0.35, 0.35]:
-		var r := MeshInstance3D.new()
-		var rm := CylinderMesh.new()
-		rm.top_radius = 0.4
-		rm.bottom_radius = 0.4
-		rm.height = 0.06
-		rm.radial_segments = 20
-		r.mesh = rm
-		r.material_override = Fx.solid_mat(Color(0.15, 0.15, 0.15), 0.8, 0.4)
-		r.position.y = y
-		p.add_child(r)
+	# красная окраска «опасно»: перекрашиваем материал модели
+	for mi in Assets.meshes_in(vis):
+		for s in mi.mesh.get_surface_count():
+			var src = mi.mesh.surface_get_material(s)
+			if src is StandardMaterial3D:
+				var m: StandardMaterial3D = src.duplicate()
+				m.albedo_color = Color(1.0, 0.32, 0.25)
+				m.emission_enabled = true
+				m.emission = Color(1.0, 0.4, 0.1)
+				m.emission_energy_multiplier = 0.0
+				mi.set_surface_override_material(s, m)
+				p._mat = m
 	var band := MeshInstance3D.new()
 	var bm := CylinderMesh.new()
-	bm.top_radius = 0.385
-	bm.bottom_radius = 0.385
-	bm.height = 0.18
-	bm.radial_segments = 20
+	bm.top_radius = 0.322
+	bm.bottom_radius = 0.322
+	bm.height = 0.12
+	bm.radial_segments = 24
 	band.mesh = bm
-	band.material_override = Fx.glow_mat(Color(1.0, 0.75, 0.1), 1.5)
+	band.material_override = Fx.glow_mat(Color(1.0, 0.75, 0.1), 1.2)
 	p.add_child(band)
+	band.position.y = 0.6
 	var cs := CollisionShape3D.new()
 	var cy := CylinderShape3D.new()
-	cy.radius = 0.38
-	cy.height = 1.15
+	cy.radius = 0.31
+	cy.height = 0.93
 	cs.shape = cy
+	cs.position.y = 0.465
 	p.add_child(cs)
 	p._common()
 	G.world.add_child(p)
-	p.global_position = pos
+	p.global_position = pos - Vector3(0, 0.5, 0)
 	return p
 
 
@@ -123,7 +101,7 @@ func take_hit(dmg: float, pos: Vector3, dir: Vector3, force: float) -> void:
 func _arm() -> void:
 	_armed = true
 	_mat.emission_energy_multiplier = 6.0
-	Fx.spark_emitter(self, Vector3(0, 0.6, 0), 0.5)
+	Fx.spark_emitter(self, Vector3(0, 1.0, 0), 0.5)
 	Sfx.play3d("overheat", global_position, 0.0, 1.4)
 	get_tree().create_timer(0.18, false).timeout.connect(_blow)
 
@@ -131,15 +109,15 @@ func _arm() -> void:
 func _blow() -> void:
 	if not is_instance_valid(self):
 		return
-	var pos := global_position
+	var pos := global_position + Vector3(0, 0.5, 0)
 	collision_layer = 0
 	queue_free()
 	G.explode(pos, 5.5, 160.0, 1800.0, 0.7, true)
 
 
 func _shatter(dir: Vector3, force: float) -> void:
-	var pos := global_position
-	var size: float = (get_child(0) as MeshInstance3D).mesh.size.x
+	var pos := global_position + Vector3(0, 0.2, 0)
+	var size := 0.6
 	Sfx.play3d("crumble", pos, 0.0, 1.4)
 	Fx.chips(pos, Vector3.UP, 12, Color(0.5, 0.36, 0.2))
 	Fx.dust(pos, 0.6 * size)

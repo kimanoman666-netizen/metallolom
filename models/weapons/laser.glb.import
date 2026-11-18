@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://c7kltaholrrfr"
-path="res://.godot/imported/shrub_04.gltf-7aaaabe083ba4e6b24d9c6196e392e4f.scn"
+uid="uid://cuiadgrq3xwrh"
+path="res://.godot/imported/laser.glb-dc8f3ab5f454ce4d43007e5436923074.scn"
 
 [deps]
 
-source_file="res://assets/models/shrub_04/shrub_04.gltf"
-dest_files=["res://.godot/imported/shrub_04.gltf-7aaaabe083ba4e6b24d9c6196e392e4f.scn"]
+source_file="res://models/weapons/laser.glb"
+dest_files=["res://.godot/imported/laser.glb-dc8f3ab5f454ce4d43007e5436923074.scn"]
 
 [params]
 

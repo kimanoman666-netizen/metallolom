@@ -9,10 +9,6 @@ var hud: HUD
 var menu_cam: Camera3D
 var menu_t := 0.0
 
-var concrete_tex: Texture2D
-var wood_tex: Texture2D
-var rust_tex: Texture2D
-var concrete_nrm: Texture2D
 
 var spawn_points: Array = []
 var wave := 0
@@ -22,14 +18,12 @@ var alive := 0
 var break_timer := -1.0
 var paused := false
 var over := false
-var lamps: Array = []
 
 
 func _ready() -> void:
 	G.main = self
 	G.world = self
 	G.reset_run()
-	_make_textures()
 	_make_environment()
 	Level.build(self)
 	player = Player.new()
@@ -45,6 +39,8 @@ func _ready() -> void:
 	apply_quality()
 	if G.autotest:
 		var script_path := "res://scripts/showcase.gd" if "--showcase" in OS.get_cmdline_user_args() else "res://scripts/autotest.gd"
+		if "--vmshots" in OS.get_cmdline_user_args():
+			script_path = "res://scripts/_vmshots.gd"
 		add_child(load(script_path).new())
 		return
 	if G.autostart:
@@ -55,85 +51,110 @@ func _ready() -> void:
 
 
 func _make_textures() -> void:
-	concrete_tex = _noise_tex(0.06, [Color(0.36, 0.35, 0.33), Color(0.52, 0.5, 0.47), Color(0.44, 0.43, 0.41)], 3)
-	concrete_nrm = _noise_tex(0.12, [], 4, true)
-	rust_tex = _noise_tex(0.035, [Color(0.18, 0.09, 0.05), Color(0.42, 0.2, 0.08), Color(0.3, 0.3, 0.3)], 5)
-	wood_tex = _noise_tex(0.02, [Color(0.45, 0.31, 0.17), Color(0.58, 0.42, 0.24)], 6)
+	pass
 
 
-func _noise_tex(freq: float, colors: Array, seed_v: int, normal: bool = false) -> NoiseTexture2D:
-	var n := FastNoiseLite.new()
-	n.seed = seed_v
-	n.frequency = freq
-	n.fractal_octaves = 5
-	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	var t := NoiseTexture2D.new()
-	t.width = 512
-	t.height = 512
-	t.seamless = true
-	t.noise = n
-	if normal:
-		t.as_normal_map = true
-		t.bump_strength = 6.0
-	elif colors.size() > 0:
-		var g := Gradient.new()
-		var offs := PackedFloat32Array()
-		var cols := PackedColorArray()
-		for i in colors.size():
-			offs.append(float(i) / max(colors.size() - 1, 1))
-			cols.append(colors[i])
-		g.offsets = offs
-		g.colors = cols
-		t.color_ramp = g
-	t.generate_mipmaps = true
-	return t
+## Направление на солнце на HDRI-небе (найдено по самому яркому пикселю панорамы).
+const SUN_YAW := 34.23
+const SUN_ELEV := 47.86
 
 
 func _make_environment() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
-	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.09, 0.12, 0.2)
-	sm.sky_horizon_color = Color(0.78, 0.5, 0.32)
-	sm.ground_bottom_color = Color(0.05, 0.04, 0.04)
-	sm.ground_horizon_color = Color(0.5, 0.28, 0.16)
-	sm.sun_angle_max = 20.0
-	sm.sky_energy_multiplier = 1.0
-	sky.sky_material = sm
+	var pm := PanoramaSkyMaterial.new()
+	pm.panorama = load("res://assets/sky/kloofendal_48d_partly_cloudy_puresky.hdr")
+	pm.energy_multiplier = 0.55
+	sky.sky_material = pm
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.6
+	env.ambient_light_sky_contribution = 1.0
+	env.ambient_light_energy = 0.9
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 1.0
-	env.tonemap_white = 6.0
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 1.05
 	env.glow_enabled = true
-	env.glow_intensity = 0.7
-	env.glow_strength = 1.0
-	env.glow_bloom = 0.05
-	env.glow_hdr_threshold = 1.1
+	env.glow_intensity = 0.35
+	env.glow_strength = 0.9
+	env.glow_bloom = 0.02
+	env.glow_hdr_threshold = 1.4
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.55, 0.45, 0.4)
-	env.fog_density = 0.0028
-	env.fog_sky_affect = 0.4
+	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	env.fog_light_color = Color(0.62, 0.7, 0.8)
+	env.fog_density = 0.0016
+	env.fog_aerial_perspective = 0.75
+	env.fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 1.1
+	env.adjustment_contrast = 1.06
+	env.adjustment_saturation = 0.92
 	world_env = WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
 
 	sun = DirectionalLight3D.new()
-	sun.light_color = Color(1.0, 0.78, 0.55)
-	sun.light_energy = 1.9
+	sun.light_color = Color(1.0, 0.95, 0.88)
+	sun.light_energy = 2.4
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 120.0
-	sun.shadow_blur = 1.5
-	sun.rotation_degrees = Vector3(-28, -40, 0)
+	sun.directional_shadow_max_distance = 140.0
+	sun.directional_shadow_blend_splits = true
+	sun.shadow_blur = 1.0
+	sun.light_angular_distance = 0.6
+	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	add_child(sun)
+	var yaw := deg_to_rad(SUN_YAW)
+	var el := deg_to_rad(SUN_ELEV)
+	var to_sun := Vector3(sin(yaw) * cos(el), sin(el), -cos(yaw) * cos(el))
+	sun.look_at_from_position(Vector3.ZERO, -to_sun, Vector3.UP)
+
+	# пост-обработка «под камеру»: зерно, виньетка, хроматическая аберрация
+	var post := CanvasLayer.new()
+	post.layer = 5
+	add_child(post)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = """
+shader_type canvas_item;
+uniform sampler2D screen : hint_screen_texture, filter_linear;
+uniform float grain = 0.035;
+uniform float vignette = 0.32;
+uniform float aberration = 0.0016;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	vec2 d = uv - 0.5;
+	float r2 = dot(d, d);
+	vec3 col;
+	col.r = texture(screen, uv + d * aberration * r2 * 4.0).r;
+	col.g = texture(screen, uv).g;
+	col.b = texture(screen, uv - d * aberration * r2 * 4.0).b;
+	col *= 1.0 - vignette * smoothstep(0.1, 0.55, r2 * 1.6);
+	float g = hash(uv * 1000.0 + fract(TIME * 7.13)) - 0.5;
+	col += g * grain;
+	COLOR = vec4(col, 1.0);
+}
+"""
+	var pmat := ShaderMaterial.new()
+	pmat.shader = sh
+	rect.material = pmat
+	post.add_child(rect)
+
+	# реверберация на общем звуке: эхо от стен промзоны
+	if AudioServer.get_bus_effect_count(0) == 0:
+		var rev := AudioEffectReverb.new()
+		rev.room_size = 0.55
+		rev.damping = 0.6
+		rev.wet = 0.12
+		rev.dry = 1.0
+		rev.spread = 0.8
+		AudioServer.add_bus_effect(0, rev)
+		var lim := AudioEffectHardLimiter.new()
+		AudioServer.add_bus_effect(0, lim)
 
 
 func apply_quality() -> void:
@@ -141,27 +162,34 @@ func apply_quality() -> void:
 		return
 	var q: int = G.settings.quality
 	env.ssao_enabled = q >= 1
-	env.ssao_intensity = 2.2
-	env.ssao_radius = 1.2
+	env.ssao_intensity = 1.6
+	env.ssao_radius = 1.0
+	env.ssao_detail = 0.6
 	env.ssil_enabled = q >= 2
+	env.ssil_intensity = 0.7
 	env.ssr_enabled = q >= 2
 	env.ssr_max_steps = 48
-	env.volumetric_fog_enabled = q >= 2
-	env.volumetric_fog_density = 0.005
-	env.volumetric_fog_albedo = Color(0.9, 0.75, 0.6)
-	env.volumetric_fog_anisotropy = 0.6
-	env.volumetric_fog_length = 80.0
-	sun.shadow_enabled = true
+	env.sdfgi_enabled = q >= 2
+	env.sdfgi_use_occlusion = true
+	env.sdfgi_cascades = 4
+	env.sdfgi_min_cell_size = 0.25
+	env.sdfgi_energy = 0.8
+	env.volumetric_fog_enabled = q >= 1
+	env.volumetric_fog_density = 0.0045
+	env.volumetric_fog_albedo = Color(0.85, 0.9, 1.0)
+	env.volumetric_fog_anisotropy = 0.75
+	env.volumetric_fog_length = 90.0
+	env.volumetric_fog_sky_affect = 0.0
+	env.volumetric_fog_ambient_inject = 0.15
 	sun.directional_shadow_max_distance = 140.0 if q >= 2 else 80.0
+	sun.light_volumetric_fog_energy = 1.4
 	var vp := get_viewport()
 	if vp:
 		vp.msaa_3d = Viewport.MSAA_4X if q >= 2 else (Viewport.MSAA_2X if q == 1 else Viewport.MSAA_DISABLED)
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if q == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
 		vp.use_debanding = q >= 1
+		vp.mesh_lod_threshold = 1.0 if q >= 2 else 3.0
 	RenderingServer.directional_shadow_atlas_set_size(4096 if q >= 2 else 2048, true)
-	for l in lamps:
-		if is_instance_valid(l):
-			l.shadow_enabled = q >= 2
 
 
 # ================================================================ состояния

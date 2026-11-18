@@ -65,6 +65,7 @@ var flash := 0.0
 # шагающие
 var ride := 2.0
 var ride_cur := 2.0
+var ride_min := 0.5          # ниже нельзя: днище корпуса упрётся в землю
 var crouch := 0.0
 var tilt := Vector2.ZERO
 var walk_phase := 0.0
@@ -135,6 +136,7 @@ func _ready() -> void:
 	else:
 		ride = body.position.y
 		ride_cur = ride
+		ride_min = -body.get_aabb().position.y + 0.08
 		var cap := CapsuleShape3D.new()
 		cap.radius = cfg.radius
 		cap.height = ride + 0.9
@@ -529,7 +531,9 @@ func _animate_walker(delta: float) -> void:
 	var target_ride = ride * k - crouch * ride * 0.25 + sin(walk_phase) * 0.04 * min(hv, 1.0)
 	if state == "air":
 		target_ride = ride * 0.9
+	target_ride = max(target_ride, ride_min + tilt.length() * 0.35)
 	ride_cur = lerp(ride_cur, target_ride, clamp(delta * 6.0, 0.0, 1.0))
+	ride_cur = max(ride_cur, ride_min)
 	body.position.y = ride_cur
 	var tilt_t := Vector2.ZERO
 	for l in legs:
@@ -537,7 +541,7 @@ func _animate_walker(delta: float) -> void:
 			tilt_t += Vector2(l.rest.x, l.rest.z).normalized()
 	if state == "stomp":
 		tilt_t += Vector2(0, 1.2)
-	tilt = tilt.lerp(tilt_t, clamp(delta * 4.0, 0.0, 1.0))
+	tilt = tilt.lerp(tilt_t.limit_length(1.4), clamp(delta * 4.0, 0.0, 1.0))
 	body.rotation = Vector3(-tilt.y * 0.22, 0.0, tilt.x * 0.22)
 	var cap := shape.shape as CapsuleShape3D
 	cap.height = max(ride_cur + 0.9, cfg.radius * 2.0 + 0.1)
@@ -603,7 +607,15 @@ func _dangle(l: Dictionary, delta: float) -> void:
 	var out := h - body.global_position
 	out.y = 0
 	out = out.normalized() if out.length() > 0.01 else Vector3.RIGHT
-	var dir := (out * 0.7 + Vector3.DOWN + global_basis.z * sin(l.swing) * 0.2).normalized()
+	var dir := (out * 0.9 + Vector3.DOWN * 0.45 + global_basis.z * sin(l.swing) * 0.15).normalized()
+	# чем ниже бедро, тем горизонтальнее висит нога — чтобы не проваливалась в землю
+	var ground_y := global_position.y + 0.15
+	var reach: float = l.a + (l.b if is_instance_valid(l.b2) and parts.has(String(l.b2.name)) and parts[String(l.b2.name)].alive else 0.3)
+	var max_drop: float = clamp((h.y - ground_y) / max(reach, 0.1), -0.2, 1.0)
+	if -dir.y > max_drop:
+		var flat := Vector3(dir.x, 0, dir.z).normalized()
+		var dy: float = max_drop
+		dir = (flat * sqrt(max(1.0 - dy * dy, 0.0)) + Vector3.DOWN * dy).normalized()
 	var n := dir.cross(Vector3.UP)
 	if n.length() < 0.01:
 		n = Vector3.RIGHT
@@ -958,6 +970,8 @@ func _make_debris(node: Node3D) -> RigidBody3D:
 	rb.mass = clamp(vol * 500.0, 3.0, 250.0)
 	rb.physics_material_override = WallChunk.debris_phys()
 	rb.linear_velocity = velocity * 0.7
+	rb.continuous_cd = true
+	G.lift_above_ground(rb)
 	G.add_debris(rb)
 	return rb
 

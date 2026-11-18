@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://2ys2ejoxceuh"
-path="res://.godot/imported/Barrel_01.gltf-c4573c90c24cdbc539d7fe8c19073849.scn"
+uid="uid://bte182xag0cqq"
+path="res://.godot/imported/blaster.glb-4ee4ec35cbe01d4cda558b85a46a1605.scn"
 
 [deps]
 
-source_file="res://assets/models/Barrel_01/Barrel_01.gltf"
-dest_files=["res://.godot/imported/Barrel_01.gltf-c4573c90c24cdbc539d7fe8c19073849.scn"]
+source_file="res://models/weapons/blaster.glb"
+dest_files=["res://.godot/imported/blaster.glb-4ee4ec35cbe01d4cda558b85a46a1605.scn"]
 
 [params]
 

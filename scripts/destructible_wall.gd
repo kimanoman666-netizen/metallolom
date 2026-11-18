@@ -21,18 +21,13 @@ func setup(w_cells: int, h_cells: int, c: Color, thick: float = 0.38) -> Destruc
 	return self
 
 
+var tex_name := "concrete_wall_006"
+
+
 func _ready() -> void:
 	for i in 3:
-		var m := StandardMaterial3D.new()
-		var v := 1.0 - i * 0.08
-		m.albedo_color = Color(color_a.r * v, color_a.g * v, color_a.b * v)
-		m.roughness = 0.92
-		if G.main and G.main.concrete_tex:
-			m.albedo_texture = G.main.concrete_tex
-			m.uv1_triplanar = true
-			m.uv1_world_triplanar = true
-			m.uv1_scale = Vector3(0.6, 0.6, 0.6)
-		mats.append(m)
+		var v := 1.0 - i * 0.07
+		mats.append(Assets.pbr(tex_name, Color(v, v * 0.98, v * 0.96), 0.55))
 	var mesh := BoxMesh.new()
 	mesh.size = cell - Vector3(0.015, 0.015, 0.0)
 	var shape := BoxShape3D.new()
@@ -82,7 +77,7 @@ func hit_chunk(ch: WallChunk, dmg: float, pos: Vector3, dir: Vector3, force: flo
 	ch.hp -= dmg
 	if _fx_cd <= 0.0:
 		_fx_cd = 0.05
-		Fx.chips(pos, -dir, 5, mats[0].albedo_color)
+		Fx.chips(pos, -dir, 5, Color(0.45, 0.42, 0.38) if tex_name != "red_brick" else Color(0.5, 0.25, 0.18))
 	if ch.hp <= 0.0:
 		_break(ch, dir * (force * 0.06 + 4.0))
 	# сильный удар выбивает соседей

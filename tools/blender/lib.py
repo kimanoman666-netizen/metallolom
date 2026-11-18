@@ -30,6 +30,9 @@ PALETTE = {
     "brass": dict(color=(0.62, 0.45, 0.2), metal=0.9, rough=0.35),
     "wood": dict(color=(0.28, 0.15, 0.07), metal=0.0, rough=0.65),
     "cable": dict(color=(0.55, 0.42, 0.25), metal=0.1, rough=0.6),
+    "olive": dict(color=(0.22, 0.25, 0.15), metal=0.3, rough=0.6),
+    "glow_coil": dict(color=(0.1, 0.6, 0.9), metal=0.0, rough=0.3, emit=(0.2, 0.8, 1.0), strength=6.0),
+    "glow_laser": dict(color=(1.0, 0.3, 0.2), metal=0.0, rough=0.2, emit=(1.0, 0.25, 0.1), strength=6.0),
 }
 
 

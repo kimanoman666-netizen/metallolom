@@ -38,6 +38,9 @@ var sway := Vector2.ZERO
 var bob_phase := 0.0
 var right_hand: Node3D
 var left_hand: Node3D
+var hands := {}
+var grip_r: Array = []        # точка хвата правой руки для каждого оружия
+var grip_l: Array = []        # [узел, "guard"/"grip"] для левой
 var fist: Node3D
 var fist_mat: ShaderMaterial
 var coil_mats: Array = []
@@ -60,6 +63,9 @@ const GLB := {
 	"shotgun": {"scale": 0.8, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3(0.08, 0.02, -0.26), "ads": Vector3(0.0, -0.062, -0.36)},
 	"minigun": {"scale": 0.85, "pos": Vector3(0.0, 0.0, 0.0), "lh": Vector3(0.06, 0.05, -0.12), "ads": Vector3(0.1, -0.2, -0.5)},
 	"launcher": {"scale": 0.85, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3(0.08, -0.02, -0.22), "ads": Vector3(0.0, -0.13, -0.4)},
+	"blaster": {"scale": 0.9, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3.ZERO, "ads": Vector3(0.0, -0.085, -0.4)},
+	"laser": {"scale": 0.9, "pos": Vector3(0.0, -0.01, 0.0), "lh": Vector3.ZERO, "ads": Vector3(0.0, -0.095, -0.4)},
+	"rpg": {"scale": 0.85, "pos": Vector3(0.02, -0.02, 0.0), "lh": Vector3.ZERO, "ads": Vector3(0.045, -0.1, -0.38)},
 }
 
 
@@ -118,86 +124,24 @@ func _ready() -> void:
 	var gun_dark := mat(Color(0.1, 0.1, 0.11), 0.85, 0.35)
 	var gun_mid := mat(Color(0.5, 0.52, 0.55), 0.9, 0.28)
 
-	# правая рука (держит оружие)
-	right_hand = Node3D.new()
-	root.add_child(right_hand)
-	_box(right_hand, Vector3(0.075, 0.075, 0.3), Vector3(0.06, -0.16, 0.12), sleeve, Vector3(0.95, 0.15, 0))
-	_box(right_hand, Vector3(0.08, 0.03, 0.14), Vector3(0.06, -0.12, 0.1), armor, Vector3(0.95, 0.15, 0))
-	_box(right_hand, Vector3(0.082, 0.012, 0.025), Vector3(0.06, -0.1, 0.05), orange, Vector3(0.95, 0.15, 0))
-	_box(right_hand, Vector3(0.075, 0.09, 0.09), Vector3(0.03, -0.07, 0.0), glove)
+	# руки — модели из Blender (tools/blender/hands.py)
+	var hands_scene: PackedScene = load("res://models/hands.glb")
+	var hs := hands_scene.instantiate()
+	for nm in ["hand_r_grip", "hand_l_guard", "hand_l_grip"]:
+		var h: Node3D = hs.get_node(nm)
+		_clear_owner(h)
+		hs.remove_child(h)
+		Mats.apply(h, true)
+		root.add_child(h)
+		hands[nm] = h
+	hs.free()
+	right_hand = hands.hand_r_grip
+	left_hand = hands.hand_l_guard
 
-	# левая рука (поддерживает)
-	left_hand = Node3D.new()
-	root.add_child(left_hand)
-	_box(left_hand, Vector3(0.07, 0.07, 0.3), Vector3(-0.12, -0.17, -0.12), sleeve, Vector3(1.0, -0.6, 0))
-	_box(left_hand, Vector3(0.075, 0.025, 0.12), Vector3(-0.11, -0.13, -0.12), armor, Vector3(1.0, -0.6, 0))
-	_box(left_hand, Vector3(0.075, 0.07, 0.1), Vector3(-0.06, -0.06, -0.2), glove)
-
-	# ---------- бластер
-	var w0 := Node3D.new()
-	root.add_child(w0)
-	_box(w0, Vector3(0.08, 0.12, 0.42), Vector3(0, 0, -0.12), gun_dark)
-	_box(w0, Vector3(0.085, 0.04, 0.3), Vector3(0, 0.075, -0.1), gun_mid)
-	_box(w0, Vector3(0.06, 0.13, 0.07), Vector3(0, -0.1, 0.02), gun_dark, Vector3(-0.3, 0, 0))
-	_cyl(w0, 0.025, 0.24, Vector3(0, 0.01, -0.42), gun_mid)
-	for i in 3:
-		var cm := mat(Color(0.1, 0.6, 0.8), 0.2, 0.3, Color(0.2, 0.8, 1.0), 2.0)
-		coil_mats.append(cm)
-		_cyl(w0, 0.04, 0.025, Vector3(0, 0.01, -0.36 - i * 0.05), cm)
-	_box(w0, Vector3(0.02, 0.03, 0.18), Vector3(0.045, 0.02, -0.1), mat(Color(0.1, 0.6, 0.8), 0.2, 0.3, Color(0.2, 0.8, 1.0), 3.0))
-	_add_muzzle(w0, Vector3(0, 0.01, -0.56))
-
-	# ---------- лазер
-	var w1 := Node3D.new()
-	root.add_child(w1)
-	_box(w1, Vector3(0.11, 0.14, 0.38), Vector3(0, 0, -0.1), gun_mid)
-	_box(w1, Vector3(0.115, 0.05, 0.4), Vector3(0, 0.09, -0.12), armor)
-	_box(w1, Vector3(0.06, 0.13, 0.07), Vector3(0, -0.11, 0.03), gun_dark, Vector3(-0.3, 0, 0))
-	for i in 4:
-		_box(w1, Vector3(0.16, 0.012, 0.05), Vector3(0, -0.04 + i * 0.03, -0.3), gun_dark)
-	laser_mat = mat(Color(1.0, 0.3, 0.2), 0.0, 0.2, Color(1.0, 0.25, 0.1), 3.0)
-	var lens := MeshInstance3D.new()
-	var sp := SphereMesh.new()
-	sp.radius = 0.045
-	sp.height = 0.09
-	lens.mesh = sp
-	lens.material_override = laser_mat
-	lens.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	lens.extra_cull_margin = 16384.0
-	w1.add_child(lens)
-	lens.position = Vector3(0, 0.01, -0.34)
-	_cyl(w1, 0.06, 0.06, Vector3(0, 0.01, -0.33), gun_dark)
-	_add_muzzle(w1, Vector3(0, 0.01, -0.4))
-
-	# ---------- РПГ
-	var w2 := Node3D.new()
-	root.add_child(w2)
-	var olive := mat(Color(0.25, 0.28, 0.18), 0.4, 0.6)
-	_cyl(w2, 0.075, 0.85, Vector3(0, 0.06, -0.12), olive)
-	_cyl(w2, 0.085, 0.08, Vector3(0, 0.06, -0.52), gun_dark)
-	_cyl(w2, 0.09, 0.1, Vector3(0, 0.06, 0.28), gun_dark)
-	_box(w2, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.06, 0.0), gun_dark, Vector3(-0.3, 0, 0))
-	_box(w2, Vector3(0.05, 0.12, 0.06), Vector3(0, -0.05, -0.22), gun_dark)
-	_box(w2, Vector3(0.03, 0.06, 0.12), Vector3(-0.07, 0.15, -0.05), gun_mid)
-	rocket_tip = Node3D.new()
-	w2.add_child(rocket_tip)
-	var tipm := MeshInstance3D.new()
-	var tc := CylinderMesh.new()
-	tc.top_radius = 0.0
-	tc.bottom_radius = 0.06
-	tc.height = 0.16
-	tipm.mesh = tc
-	tipm.material_override = mat(Color(0.8, 0.2, 0.1), 0.5, 0.4)
-	tipm.rotation.x = -PI * 0.5
-	tipm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	tipm.extra_cull_margin = 16384.0
-	rocket_tip.add_child(tipm)
-	rocket_tip.position = Vector3(0, 0.06, -0.6)
-	_add_muzzle(w2, Vector3(0, 0.06, -0.62))
-
-	# модели из Blender
+	# ---------- все стволы — модели из Blender (tools/blender/weapons.py)
+	var order := ["rifle", "shotgun", "minigun", "blaster", "laser", "launcher", "rpg"]
 	var glb_nodes := {}
-	for id in ["rifle", "shotgun", "minigun", "launcher"]:
+	for id in order:
 		var wrap := Node3D.new()
 		root.add_child(wrap)
 		var inst: Node3D = load("res://models/weapons/%s.glb" % id).instantiate()
@@ -207,34 +151,53 @@ func _ready() -> void:
 		wrap.scale = Vector3.ONE * c.scale
 		wrap.position = c.pos
 		glb_nodes[id] = wrap
-	var m_old := muzzles.duplicate()   # [бластер, лазер, рпг]
-	weapons = [glb_nodes.rifle, glb_nodes.shotgun, glb_nodes.minigun, w0, w1, glb_nodes.launcher, w2]
+	weapons = []
 	muzzles = []
-	for i in weapons.size():
-		var w: Node3D = weapons[i]
-		var mz: Node3D = w.find_child("muzzle", true, false)
-		if mz == null:
-			mz = m_old[[0, 0, 0, 0, 1, 0, 2][i]]
-		muzzles.append(mz)
-		var lv: Node3D = w.find_child("lever", true, false)
-		levers.append(lv)
+	for i in order.size():
+		var w: Node3D = glb_nodes[order[i]]
+		weapons.append(w)
+		muzzles.append(w.find_child("muzzle", true, false))
+		levers.append(w.find_child("lever", true, false))
 		lever_t.append(1.0)
-		var id: String = ["rifle", "shotgun", "minigun", "blaster", "laser", "launcher", "rpg"][i]
-		wcfg.append(GLB.get(id, {"lh": Vector3.ZERO, "ads": Vector3(0.0, -0.05, -0.42)}))
+		wcfg.append(GLB[order[i]])
 		w.visible = i == 0
-	drum = glb_nodes.launcher.find_child("drum", true, false)
-	barrels = glb_nodes.minigun.find_child("barrels", true, false)
+		var gr: Node3D = w.find_child("grip_r", true, false)
+		var gl: Node3D = w.find_child("guard_l", true, false)
+		var kind := "guard"
+		if gl == null:
+			gl = w.find_child("grip_l", true, false)
+			kind = "grip"
+		grip_r.append(gr)
+		grip_l.append([gl, kind])
+	coil_mats = [Mats.vm("glow_coil")]
+	laser_mat = Mats.vm("glow_laser")
+	rocket_tip = glb_nodes.rpg.find_child("rocket", true, false)
 	root.position = Vector3(0.2, -0.17, -0.5)
 	root.scale = Vector3.ONE * 0.72
+	_attach_hands(0)
 
 	# кулак для суперудара
 	fist = Node3D.new()
 	add_child(fist)
 	fist_mat = mat(Color(0.75, 0.42, 0.08), 0.7, 0.3, Color(0.3, 0.7, 1.0), 0.0)
-	_box(fist, Vector3(0.1, 0.1, 0.3), Vector3(0, -0.04, 0.16), sleeve)
-	_box(fist, Vector3(0.12, 0.1, 0.12), Vector3(0, 0, 0), fist_mat)
-	_box(fist, Vector3(0.125, 0.025, 0.1), Vector3(0, 0.04, -0.01), mat(Color(0.2, 0.2, 0.2), 0.8, 0.3))
+	var fh: Node3D = hands.hand_r_grip.duplicate()
+	fist.add_child(fh)
+	fh.transform = Transform3D(Basis(Vector3.RIGHT, -0.77), Vector3.ZERO)
+	var knuck := MeshInstance3D.new()
+	var km := BoxMesh.new()
+	km.size = Vector3(0.022, 0.09, 0.03)
+	knuck.mesh = km
+	knuck.material_override = fist_mat
+	knuck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	knuck.extra_cull_margin = 16384.0
+	fh.add_child(knuck)
+	knuck.position = Vector3(0.062, 0.0, 0.006)
 	fist.visible = false
+	drum = glb_nodes.launcher.find_child("drum", true, false)
+	barrels = glb_nodes.minigun.find_child("barrels", true, false)
+	root.position = Vector3(0.2, -0.17, -0.5)
+	root.scale = Vector3.ONE * 0.72
+
 
 
 func _add_muzzle(w: Node3D, pos: Vector3) -> void:
@@ -254,6 +217,34 @@ func switch_to(i: int) -> void:
 	target = i
 	switch_t = 0.32
 	Sfx.play2d("reload", -10.0, 1.4)
+
+
+func _clear_owner(n: Node) -> void:
+	n.owner = null
+	for c in n.get_children():
+		_clear_owner(c)
+
+
+func _attach_hands(i: int) -> void:
+	var gr: Node3D = grip_r[i]
+	var gl_info: Array = grip_l[i]
+	var gl: Node3D = gl_info[0]
+	var kind: String = gl_info[1]
+	var lh: Node3D = hands.hand_l_guard if kind == "guard" else hands.hand_l_grip
+	var other: Node3D = hands.hand_l_grip if kind == "guard" else hands.hand_l_guard
+	other.visible = false
+	other.reparent(root, false)
+	for pair in [[hands.hand_r_grip, gr], [lh, gl]]:
+		var h: Node3D = pair[0]
+		var target: Node3D = pair[1]
+		h.visible = target != null
+		if target == null:
+			continue
+		h.reparent(target, false)
+		# компенсация масштаба обёртки оружия — руки всегда одного размера
+		var sc = target.global_transform.basis.get_scale().x / max(root.global_transform.basis.get_scale().x, 0.001)
+		h.transform = Transform3D(Basis().scaled(Vector3.ONE / max(sc, 0.001)), Vector3.ZERO)
+	left_hand = lh
 
 
 func on_shot() -> void:
@@ -294,6 +285,7 @@ func _process(delta: float) -> void:
 			weapons[current].visible = false
 			current = target
 			weapons[current].visible = true
+			_attach_hands(current)
 		dip = sin(k * PI)
 
 	kick = move_toward(kick, 0.0, delta * 6.0)
@@ -322,7 +314,7 @@ func _process(delta: float) -> void:
 			pos.y -= 0.25 * c
 			fist.visible = true
 			fist.position = fist.position.lerp(Vector3(0.16, -0.17 - 0.02 * c, -0.36 + 0.08 * c) + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * 0.006 * c, clamp(delta * 14.0, 0.0, 1.0))
-			fist.rotation = Vector3(0.1, 0.25, -0.3)
+			fist.rotation = Vector3(0.15, 0.2, -0.25)
 			fist_mat.set_shader_parameter("emission_energy", c * 6.0)
 		else:
 			pos.y -= 0.4
@@ -334,6 +326,7 @@ func _process(delta: float) -> void:
 		fist.position = fist.position.lerp(Vector3(0.25, -0.6, -0.35), clamp(delta * 10.0, 0.0, 1.0))
 		if fist.position.y < -0.55:
 			fist.visible = false
+	right_hand.visible = punch_state <= 0.0 and grip_r.size() > current and grip_r[current] != null
 
 	# прицеливание: оружие к центру, прицел на линию взгляда
 	var aim: float = player.aim_t
@@ -351,7 +344,6 @@ func _process(delta: float) -> void:
 		rot += Vector3(0.35 * d, 0.2 * d, 0.55 * d)
 		if current == 5:
 			drum_target += delta * 8.0
-	left_hand.position = left_hand.position.lerp(wcfg[current].lh, clamp(delta * 12.0, 0.0, 1.0))
 	# рычаг после выстрела
 	for i in levers.size():
 		if levers[i] and lever_t[i] < 1.0:

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cgf2flgoadjw5"
-path="res://.godot/imported/rollershutter_door.gltf-bba3d491d6eed3b77ec46be0b69f945b.scn"
+uid="uid://b77h8qqjfcg0b"
+path="res://.godot/imported/rpg.glb-30bc1bd39990a7551a802016f918a5dd.scn"
 
 [deps]
 
-source_file="res://assets/models/rollershutter_door/rollershutter_door.gltf"
-dest_files=["res://.godot/imported/rollershutter_door.gltf-bba3d491d6eed3b77ec46be0b69f945b.scn"]
+source_file="res://models/weapons/rpg.glb"
+dest_files=["res://.godot/imported/rpg.glb-30bc1bd39990a7551a802016f918a5dd.scn"]
 
 [params]
 

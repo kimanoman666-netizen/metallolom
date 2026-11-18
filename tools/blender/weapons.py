@@ -10,6 +10,15 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 from lib import Part, mat, reset, empty, update, export_glb  # noqa: E402
+import math as _m
+
+
+def grips(ob, r, l, l_kind="guard_l", r_rot=(-18, 0, 0), l_rot=(0, 0, 0)):
+    """Точки хвата для рук: grip_r — правая на рукояти, guard_l/grip_l — левая."""
+    e = empty("grip_r", parent=ob, loc=r)
+    e.rotation_euler = [_m.radians(a) for a in r_rot]
+    e2 = empty(l_kind, parent=ob, loc=l)
+    e2.rotation_euler = [_m.radians(a) for a in l_rot]
 
 SW = lambda: mat("steel_worn")  # noqa: E731
 SD = lambda: mat("steel_dark")  # noqa: E731
@@ -69,6 +78,7 @@ def rifle():
                 0.008, SW(), n=8)
     lv.build(parent=ob, loc=(0, 0.03, -0.05))
     empty("muzzle", parent=ob, loc=(0, 1.13, 0.03))
+    grips(ob, (0, -0.06, -0.1), (0, 0.4, 0.012))
     return ob
 
 
@@ -103,6 +113,7 @@ def shotgun():
     pump.bent_bar([(0, 0.0, 0.0), (0, 0.0, -0.05), (0, -0.05, -0.09), (0, -0.13, -0.09), (0, -0.15, -0.05)], 0.008, SW(), n=8)
     pump.build(parent=ob, loc=(0, 0.03, -0.04))
     empty("muzzle", parent=ob, loc=(0, 0.9, 0.035))
+    grips(ob, (0, -0.06, -0.1), (0, 0.42, -0.005))
     return ob
 
 
@@ -134,6 +145,9 @@ def minigun():
     w.bent_bar([(0.05, -0.15, 0.05), (0.09, -0.05, 0.08), (0.08, 0.1, 0.06)], 0.008, CB(), n=6)
     pistol_grip(w, y=-0.02, z=-0.07)
     trigger(w)
+    # передняя вертикальная рукоять под корпусом
+    w.box((0.05, 0.06, 0.04), SD(), loc=(0, 0.36, -0.075), bevel=0.006)
+    w.box((0.035, 0.05, 0.12), SD(), loc=(0, 0.36, -0.15), rot=(10, 0, 0), bevel=0.008)
     ob = w.build()
     br = Part("barrels")
     for k in range(6):
@@ -146,6 +160,7 @@ def minigun():
     br.cyl(0.02, 0.4, SD(), loc=(0, 0.2, 0), rot=(90, 0, 0), n=8)
     br.build(parent=ob, loc=(0, 0.56, 0))
     empty("muzzle", parent=ob, loc=(0, 1.0, 0))
+    grips(ob, (0, -0.02, -0.12), (0, 0.36, -0.15), l_kind="grip_l", l_rot=(10, 0, 0))
     return ob
 
 
@@ -187,10 +202,93 @@ def launcher():
         dr.box((0.012, 0.14, 0.012), SD(), loc=(math.cos(a) * 0.086, 0, math.sin(a) * 0.086), rot=(0, -math.degrees(a), 0), bevel=0.0)
     dr.build(parent=ob, loc=(0, 0.17, 0.03))
     empty("muzzle", parent=ob, loc=(0, 0.86, 0.03))
+    grips(ob, (0, -0.06, -0.1), (0, 0.4, -0.08), l_kind="grip_l", l_rot=(10, 0, 0))
     return ob
 
 
-BUILDERS = {"rifle": rifle, "shotgun": shotgun, "minigun": minigun, "launcher": launcher}
+# ============================================================ плазменный бластер
+
+def blaster():
+    w = Part("body")
+    w.hull([(0.04, -0.12, 0.06), (0.04, 0.3, 0.05), (0.035, 0.36, -0.01), (0.04, -0.14, -0.05),
+            (0.03, 0.2, 0.08), (0.035, -0.05, 0.085)], WH(), mirror_x=True, bevel=0.01)
+    w.box((0.084, 0.3, 0.03), SD(), loc=(0, 0.08, -0.045), bevel=0.006)
+    w.box((0.03, 0.22, 0.02), SD(), loc=(0, 0.05, 0.095), bevel=0.004)
+    w.box((0.04, 0.06, 0.04), SD(), loc=(0, -0.02, 0.12), bevel=0.006)
+    w.cyl(0.015, 0.02, GL(), loc=(0, 0.01, 0.125), rot=(90, 0, 0), n=10)
+    w.cyl(0.024, 0.3, SD(), loc=(0, 0.48, 0.02), rot=(90, 0, 0), n=14)
+    w.ring(0.03, 0.022, 0.03, SW(), loc=(0, 0.62, 0.02), rot=(90, 0, 0), n=14)
+    w.box((0.06, 0.12, 0.05), SD(), loc=(0, 0.06, -0.09), bevel=0.008)     # магазин-батарея
+    w.box((0.062, 0.02, 0.052), mat("glow_coil"), loc=(0, 0.1, -0.09), bevel=0.0)
+    w.bent_bar([(0.045, 0.25, 0.03), (0.06, 0.1, 0.06), (0.05, -0.05, 0.05)], 0.006, CB(), n=6)
+    pistol_grip(w)
+    trigger(w)
+    skeletal_stock(w, y0=-0.13, y1=-0.38, z_top=0.04, z_bot=-0.05)
+    ob = w.build()
+    co = Part("coils")
+    for i in range(4):
+        co.ring(0.034, 0.024, 0.014, mat("glow_coil"), loc=(0, 0.38 + i * 0.045, 0.02), rot=(90, 0, 0), n=16)
+    co.build(parent=ob)
+    empty("muzzle", parent=ob, loc=(0, 0.65, 0.02))
+    grips(ob, (0, -0.06, -0.1), (0, 0.3, -0.035))
+    return ob
+
+
+# ============================================================ лазерный резак
+
+def laser():
+    w = Part("body")
+    w.hull([(0.055, -0.12, 0.06), (0.055, 0.3, 0.06), (0.05, 0.36, -0.03), (0.055, -0.14, -0.06),
+            (0.03, 0.2, 0.1), (0.035, -0.05, 0.1)], SW(), mirror_x=True, bevel=0.012)
+    w.box((0.115, 0.36, 0.035), RU(), loc=(0, 0.1, 0.075), bevel=0.006)
+    for i in range(5):
+        w.box((0.13, 0.012, 0.09), SD(), loc=(0, 0.25 + i * 0.025, 0.0), bevel=0.002)   # радиатор
+    w.cyl(0.06, 0.08, SD(), loc=(0, 0.42, 0.01), rot=(90, 0, 0), n=16)
+    w.ring(0.066, 0.05, 0.04, BR(), loc=(0, 0.46, 0.01), rot=(90, 0, 0), n=16)
+    w.cyl(0.035, 0.05, SD(), loc=(0, -0.05, -0.1), rot=(0, 0, 0), n=12)
+    w.box((0.07, 0.16, 0.06), SD(), loc=(0, 0.12, -0.085), bevel=0.008)
+    w.bent_bar([(0.06, 0.3, 0.06), (0.08, 0.15, 0.1), (0.07, -0.05, 0.08), (0.04, -0.12, 0.02)], 0.007, RU(), n=6)
+    w.box((0.05, 0.08, 0.05), WH(), loc=(0, 0.0, 0.13), bevel=0.006)
+    pistol_grip(w)
+    trigger(w)
+    skeletal_stock(w, y0=-0.14, y1=-0.42)
+    ob = w.build()
+    ln = Part("lens")
+    ln.sphere(0.04, mat("glow_laser"), loc=(0, 0.47, 0.01), scale=(1, 0.5, 1))
+    ln.build(parent=ob)
+    empty("muzzle", parent=ob, loc=(0, 0.5, 0.01))
+    grips(ob, (0, -0.06, -0.1), (0, 0.22, -0.06))
+    return ob
+
+
+# ============================================================ ракетомёт
+
+def rpg():
+    w = Part("body")
+    w.cyl(0.07, 1.0, mat("olive"), loc=(0, 0.15, 0.06), rot=(90, 0, 0), n=18)
+    w.ring(0.082, 0.066, 0.1, SD(), loc=(0, 0.66, 0.06), rot=(90, 0, 0), n=18)
+    w.ring(0.09, 0.066, 0.12, SD(), loc=(0, -0.37, 0.06), rot=(90, 0, 0), n=18)
+    w.ring(0.074, 0.07, 0.03, RU(), loc=(0, 0.3, 0.06), rot=(90, 0, 0), n=18)
+    w.ring(0.074, 0.07, 0.03, RU(), loc=(0, -0.05, 0.06), rot=(90, 0, 0), n=18)
+    w.box((0.05, 0.1, 0.06), SD(), loc=(-0.075, 0.1, 0.12), bevel=0.006)         # прицел
+    w.cyl(0.018, 0.12, GL(), loc=(-0.075, 0.1, 0.16), rot=(90, 0, 0), n=10)
+    w.box((0.03, 0.2, 0.03), SD(), loc=(0, 0.05, -0.02), bevel=0.004)
+    w.box((0.035, 0.05, 0.11), SD(), loc=(0, 0.3, -0.07), rot=(10, 0, 0), bevel=0.008)   # передняя рукоять
+    w.box((0.1, 0.06, 0.04), WH(), loc=(0.07, -0.15, 0.06), bevel=0.006)
+    pistol_grip(w)
+    trigger(w)
+    ob = w.build()
+    rk = Part("rocket")
+    rk.cyl(0.055, 0.12, SD(), loc=(0, 0.72, 0.06), rot=(90, 0, 0), n=14)
+    rk.cyl(0.0, 0.14, mat("glow_red"), loc=(0, 0.85, 0.06), rot=(90, 0, 0), n=14, r2=0.055)
+    rk.build(parent=ob)
+    empty("muzzle", parent=ob, loc=(0, 0.75, 0.06))
+    grips(ob, (0, -0.06, -0.1), (0, 0.3, -0.07), l_kind="grip_l", l_rot=(10, 0, 0))
+    return ob
+
+
+BUILDERS = {"rifle": rifle, "shotgun": shotgun, "minigun": minigun, "launcher": launcher,
+            "blaster": blaster, "laser": laser, "rpg": rpg}
 
 if __name__ == "__main__":
     out = sys.argv[1]

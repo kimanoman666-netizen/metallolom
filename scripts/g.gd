@@ -40,7 +40,7 @@ var _debris: Array = []
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var args := OS.get_cmdline_user_args()
-	autotest = "--autotest" in args or "--shots" in args or "--showcase" in args
+	autotest = "--autotest" in args or "--shots" in args or "--showcase" in args or "--vmshots" in args
 	_setup_input()
 	_load_settings()
 	_apply_window()
@@ -77,14 +77,30 @@ func _process(delta: float) -> void:
 		combo_timer -= delta
 		if combo_timer <= 0.0:
 			combo = 1.0
-	# чистим мусор, упавший за карту
+	# страховка: обломок, провалившийся под землю, возвращаем наверх
 	for i in range(_debris.size() - 1, -1, -1):
 		var d = _debris[i]
 		if not is_instance_valid(d):
 			_debris.remove_at(i)
-		elif d.global_position.y < -40.0:
-			d.queue_free()
-			_debris.remove_at(i)
+		elif d.global_position.y < -0.6 and d is RigidBody3D and not d.freeze:
+			d.global_position.y = 0.6
+			d.linear_velocity = Vector3(d.linear_velocity.x, 0.0, d.linear_velocity.z) * 0.5
+			lift_above_ground(d)
+
+
+## Поднимает тело так, чтобы ни одна его форма не была ниже земли (y = 0).
+func lift_above_ground(rb: Node3D) -> void:
+	var lowest := 1e9
+	for c in rb.get_children():
+		if c is CollisionShape3D and c.shape is BoxShape3D:
+			var t: Transform3D = rb.global_transform * c.transform
+			var h: Vector3 = (c.shape as BoxShape3D).size * 0.5
+			for sx in [-1.0, 1.0]:
+				for sy in [-1.0, 1.0]:
+					for sz in [-1.0, 1.0]:
+						lowest = min(lowest, (t * Vector3(h.x * sx, h.y * sy, h.z * sz)).y)
+	if lowest < 0.02 and lowest > -50.0:
+		rb.global_position.y += 0.02 - lowest
 
 
 func reset_run() -> void:

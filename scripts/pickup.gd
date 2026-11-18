@@ -23,25 +23,17 @@ static func spawn(pos: Vector3, kind: int) -> Pickup:
 	p.vis = Node3D.new()
 	p.add_child(p.vis)
 	var c := Color(0.2, 1.0, 0.35) if kind == 0 else Color(1.0, 0.55, 0.1)
-	var core := MeshInstance3D.new()
-	if kind == 0:
-		var a := BoxMesh.new()
-		a.size = Vector3(0.5, 0.16, 0.16)
-		core.mesh = a
-		var b := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.16, 0.5, 0.16)
-		b.mesh = bm
-		b.material_override = Fx.glow_mat(c, 4.0)
-		p.vis.add_child(b)
-	else:
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.0
-		cm.bottom_radius = 0.14
-		cm.height = 0.55
-		core.mesh = cm
-	core.material_override = Fx.glow_mat(c, 4.0)
-	p.vis.add_child(core)
+	var model := Assets.whole("medical_box" if kind == 0 else "ammo_box")
+	p.vis.add_child(model)
+	model.scale = Vector3.ONE * (0.9 if kind == 0 else 2.2)
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.42
+	tm.outer_radius = 0.46
+	ring.mesh = tm
+	ring.material_override = Fx.glow_mat(c, 3.0)
+	p.add_child(ring)
+	ring.position.y = -0.7
 	var l := OmniLight3D.new()
 	l.light_color = c
 	l.light_energy = 2.0
@@ -60,7 +52,7 @@ func _process(delta: float) -> void:
 	t += delta
 	life -= delta
 	vis.rotation.y += delta * 2.5
-	vis.position.y = sin(t * 3.0) * 0.15
+	vis.position.y = sin(t * 3.0) * 0.08 - 0.45
 	if life < 5.0:
 		vis.visible = fmod(life, 0.3) > 0.12
 	if life <= 0.0:

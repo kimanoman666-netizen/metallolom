@@ -3,3 +3,4 @@ build/
 *.tmp
 autotest.log
 __pycache__/
+scripts/_vmshots.gd.uid

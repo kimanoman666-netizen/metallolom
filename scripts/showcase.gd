@@ -8,6 +8,7 @@ var step := 0
 
 
 func _ready() -> void:
+	Engine.max_physics_steps_per_frame = 24
 	G.main.start_game()
 	G.main.break_timer = 9999.0
 	var p: Player = G.player
@@ -80,6 +81,27 @@ func _physics_process(delta: float) -> void:
 	elif t > 9.0 and step == 8:
 		step = 9
 		_shot("h_after")
+		p.select(3)
+		p.yaw = PI
+		p.pitch = 0.05
+		p.global_position = Vector3(-6, 0.1, -10)
+	elif t > 10.0 and step == 9:
+		step = 10
+		_shot("i_south_blaster")
+		p.select(1)
+		p.yaw = PI * 0.5
+		p.pitch = 0.12
+		p.global_position = Vector3(20, 0.1, 30)
+	elif t > 11.0 and step == 10:
+		step = 11
+		_shot("j_west_shotgun")
+		p.yaw = -2.4
+		p.pitch = 0.35
+		p.global_position = Vector3(-18, 3.6, -6)
+		p.select(6)
+	elif t > 12.0 and step == 11:
+		step = 12
+		_shot("k_sky_rpg")
 		get_tree().quit(0)
 
 
